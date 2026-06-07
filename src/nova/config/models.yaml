@@ -1,0 +1,30 @@
+# NOVA — mapa agente → modelo (roster). FUENTE DE VERDAD de la capa de modelos.
+# Sintaxis: "proveedor:modelo" (ver CLAUDE.md §5).
+#   proveedores: ollama | gemini | groq | openrouter | deepseek
+#
+# IMPORTANTE (Ollama): los tags (ej. "qwen2.5:7b", "llama3.2:3b") deben coincidir
+# EXACTAMENTE con los modelos que tengas pulled localmente (`ollama list`).
+# Si no coinciden o Ollama no está corriendo, el router cae a modo STUB.
+
+defaults:
+  fallback: ollama:qwen2.5:7b      # proveedor/modelo de respaldo ante 429 o caída
+  stub_if_unavailable: true        # sin clave/Ollama → respuestas deterministas (testeo sin nada)
+
+agents:
+  # --- Conductor (la cara que habla con el usuario) ---
+  conductor_simple:        ollama:qwen2.5:7b
+  conductor_complex:       gemini:gemini-2.5-flash
+
+  # --- Grupo Local (Ollama, $0, siempre activo) ---
+  respuestas_rapidas:      ollama:qwen2.5:7b
+  memoria_contexto:        ollama:llama3.2:3b
+
+  # --- PMO / Orquestación (nube) ---
+  pmo_planificador:        gemini:gemini-2.5-flash
+  pmo_coordinador:         gemini:gemini-2.5-flash
+  pmo_integrador:          gemini:gemini-2.5-flash
+
+  # --- Transversales (nube) ---
+  estrategia_investigador: groq:llama-3.3-70b-versatile
+  estrategia_analista:     openrouter:deepseek/deepseek-r1:free
+  finanzas_roi:            gemini:gemini-2.5-flash

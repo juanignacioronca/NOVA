@@ -1,110 +1,51 @@
 # NOVA
 
-A modern project for building scalable and efficient solutions.
+Asistente personal multiagente (tipo Jarvis): **simple en local, complejo en la nube**,
+con un único **Conductor** que entiende, orquesta y responde. Objetivo de diseño:
+máxima capacidad con gasto **$0**. La fuente de verdad del proyecto es
+[CLAUDE.md](CLAUDE.md).
 
-## Overview
+> **Estado:** Prompt 1 — esqueleto del núcleo. Corre de punta a punta con texto,
+> rutea por complejidad (local vs nube) y deja registro en `logs/`. Sin audio,
+> video, frontend ni herramientas reales todavía (stubs). **Funciona sin claves
+> ni modelos** (modo stub).
 
-NOVA is a versatile project designed to provide a solid foundation for development. It includes tools and configurations to streamline your workflow and ensure code quality.
+## Requisitos
 
-## Features
+- Python 3.11+ es el target del proyecto; el esqueleto es compatible con 3.8+.
+- No necesitás claves ni Ollama para probar el esqueleto (modo stub automático).
 
-- 🚀 Modern development setup
-- 📦 Modular architecture
-- 🧪 Testing infrastructure
-- 📝 Comprehensive documentation
-- 🔧 Development tools and utilities
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v16 or higher)
-- npm or yarn
-- Git
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/nova.git
-cd nova
-```
-
-2. Install dependencies:
-```bash
-npm install
-# or
-yarn install
-```
-
-3. Set up environment variables:
-```bash
-cp .env.example .env
-```
-
-### Running the Project
-
-Start the development server:
-```bash
-npm run dev
-# or
-yarn dev
-```
-
-Build for production:
-```bash
-npm run build
-# or
-yarn build
-```
-
-## Project Structure
-
-```
-nova/
-├── src/              # Source code
-├── tests/            # Test files
-├── docs/             # Documentation
-├── public/           # Static assets
-└── config/           # Configuration files
-```
-
-## Development
-
-### Running Tests
+## Instalación
 
 ```bash
-npm test
-# or
-yarn test
+pip install -e ".[dev]"     # instala nova + httpx, pyyaml, pytest, pytest-asyncio
+cp .env.example .env        # opcional: completá claves cuando las tengas
 ```
 
-### Code Quality
+## Uso
 
 ```bash
-npm run lint
-# or
-yarn lint
+python -m nova.cli "ponme un timer de 10 minutos"     # simple → núcleo local
+python -m nova.cli "organízame un finde de trekking"   # complejo → nube (PMO)
 ```
 
-## Contributing
+Cada corrida imprime la traza (intención, complejidad, agentes que intervinieron,
+respuesta final) y la ruta del registro JSONL escrito en `logs/`.
 
-We welcome contributions! Please follow these steps:
+## Tests
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+```bash
+pytest
+```
 
-## License
+## Arquitectura (resumen)
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+```
+texto → Conductor (comprende + clasifica complejidad)
+          ├── simple   → Grupo Local  (RespuestasRapidas)
+          └── complejo → Grupo Nube   (PMO → Estrategia, vía MessageBus)
+        → respuesta final + registro JSONL en logs/
+```
 
-## Support
-
-For support, please open an issue on the GitHub repository or contact the development team.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for a list of changes in each release.
+Detalle completo en [CLAUDE.md](CLAUDE.md). El mapa agente→modelo vive en
+[src/nova/config/models.yaml](src/nova/config/models.yaml).

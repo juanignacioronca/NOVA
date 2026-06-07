@@ -1,0 +1,23 @@
+# Secretos — NUNCA commitear (ver CLAUDE.md §5)
+.env
+
+# Registros de agentes (los lee la auditoría, no van al repo)
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

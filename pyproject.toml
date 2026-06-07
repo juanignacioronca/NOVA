@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nova"
+version = "0.1.0"
+description = "NOVA — asistente personal multiagente (esqueleto del núcleo)"
+readme = "README.md"
+# El target de despliegue es 3.11+ (ver CLAUDE.md §7), pero el esqueleto se
+# mantiene compatible con 3.8 (usa `from __future__ import annotations`) para
+# que corra en cualquier máquina sin fricción.
+requires-python = ">=3.8"
+dependencies = [
+    "httpx",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
