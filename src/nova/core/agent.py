@@ -7,12 +7,15 @@ Cada agente declara `name`, `group` (`local`|`nube`), `model_key` (clave en
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..models import model_router
 from .message_bus import MessageBus
 from .task import Result, Task
 from .world_state import WorldState
+
+if TYPE_CHECKING:  # solo para tipos; evita acoplar en runtime
+    from ..models.model_router import Completion
 
 
 class BaseAgent:
@@ -31,6 +34,8 @@ class BaseAgent:
         self.bus = bus
         self.world = world
         self.registro = registro
+        # Última respuesta de la capa de modelos (qué proveedor/modelo contestó).
+        self.last_completion = None  # type: Optional[Completion]
         if bus is not None:
             self.bind(bus)
 
@@ -58,21 +63,39 @@ class BaseAgent:
 
     # --- modelos ---
     async def think(self, messages: List[dict], **opts) -> str:
-        """Llama a la capa de modelos con el `model_key` de este agente."""
-        return await model_router.complete(self.model_key, messages, **opts)
+        """Llama a la capa de modelos con el `model_key` de este agente.
+
+        Guarda en `self.last_completion` qué proveedor/modelo respondió (para
+        que `log()` registre el modelo real, incluido fallback/stub).
+        """
+        comp = await model_router.complete_meta(self.model_key, messages, **opts)
+        self.last_completion = comp
+        return comp.text
 
     # --- registro ---
-    def log(self, tarea: str, decision: str, resultado_breve: str) -> None:
-        """Escribe una línea de registro si hay un `Registro` conectado."""
-        if self.registro is not None:
-            self.registro.log(
-                agente=self.name,
-                grupo=self.group,
-                tarea=tarea,
-                decision=decision,
-                modelo=model_router.model_for(self.model_key) if self.model_key else "-",
-                resultado_breve=resultado_breve,
-            )
+    def log(self, tarea: str, decision: str, resultado_breve: str, modelo: Optional[str] = None) -> None:
+        """Escribe una línea de registro si hay un `Registro` conectado.
+
+        Por defecto registra el modelo que REALMENTE respondió (de
+        `last_completion`); si no hubo llamada, el spec configurado.
+        """
+        if self.registro is None:
+            return
+        if modelo is None:
+            if self.last_completion is not None:
+                modelo = self.last_completion.spec
+            elif self.model_key:
+                modelo = model_router.model_for(self.model_key)
+            else:
+                modelo = "-"
+        self.registro.log(
+            agente=self.name,
+            grupo=self.group,
+            tarea=tarea,
+            decision=decision,
+            modelo=modelo,
+            resultado_breve=resultado_breve,
+        )
 
     # --- contrato ---
     async def handle(self, task: Task) -> Result:  # pragma: no cover - abstracto

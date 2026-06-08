@@ -1,72 +1,136 @@
-"""Cliente OpenAI-compatible: sirve Groq, OpenRouter y DeepSeek con la misma
-interfaz; solo cambian `base_url` y la clave. Endpoint: POST /chat/completions.
+"""Cliente OpenAI-compatible ÚNICO para TODOS los proveedores.
+
+Cambia solo `base_url` + clave (y headers extra para OpenRouter). Sirve Ollama
+(local, /v1, clave dummy), Groq, OpenRouter, DeepSeek y Gemini (su endpoint
+compatible). Endpoint estándar: POST `{base_url}/chat/completions`.
 """
 
 from __future__ import annotations
 
 import os
-from typing import List
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
-from .base import Provider, ProviderError, RateLimitError
+from .base import (
+    Provider,
+    ProviderError,
+    ProviderTimeout,
+    ProviderUnavailable,
+    RateLimitError,
+    ServerError,
+)
 
 try:
     import httpx
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore
 
+KNOWN_PROVIDERS = ("ollama", "groq", "openrouter", "deepseek", "gemini")
 
-# Config por proveedor: base_url + variable de entorno de la clave.
-PROVIDERS = {
-    "groq": {
-        "base_url": "https://api.groq.com/openai/v1",
-        "key_env": "GROQ_API_KEY",
-    },
-    "openrouter": {
-        "base_url": "https://openrouter.ai/api/v1",
-        "key_env": "OPENROUTER_API_KEY",
-    },
-    "deepseek": {
-        "base_url": "https://api.deepseek.com/v1",
-        "key_env": "DEEPSEEK_API_KEY",
-    },
-}
+
+@dataclass
+class ProviderConfig:
+    name: str
+    base_url: str
+    key_env: Optional[str]  # None = no requiere clave (Ollama)
+    extra_headers: Dict[str, str] = field(default_factory=dict)
+
+
+def _ollama_host() -> str:
+    return os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+
+
+def provider_config(name: str) -> ProviderConfig:
+    """Resuelve base_url + clave + headers para un proveedor."""
+    key = name.lower()
+    if key == "ollama":
+        return ProviderConfig("ollama", f"{_ollama_host()}/v1", None)
+    if key == "groq":
+        return ProviderConfig("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY")
+    if key == "openrouter":
+        return ProviderConfig(
+            "openrouter",
+            "https://openrouter.ai/api/v1",
+            "OPENROUTER_API_KEY",
+            {"HTTP-Referer": "https://nova.local", "X-Title": "NOVA"},
+        )
+    if key == "deepseek":
+        return ProviderConfig("deepseek", "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY")
+    if key == "gemini":
+        return ProviderConfig(
+            "gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"
+        )
+    raise ProviderError(f"proveedor desconocido: {name}")
 
 
 class OpenAICompatibleClient(Provider):
-    """Un mismo cliente para varios proveedores OpenAI-compatibles."""
+    """Un mismo cliente async para todos los proveedores OpenAI-compatibles."""
 
     def __init__(self, provider: str) -> None:
-        if provider not in PROVIDERS:
-            raise ProviderError(f"proveedor OpenAI-compatible desconocido: {provider}")
-        self.name = provider
-        cfg = PROVIDERS[provider]
-        self.base_url = cfg["base_url"].rstrip("/")
-        self.key_env = cfg["key_env"]
+        cfg = provider_config(provider)
+        self.name = cfg.name
+        self.base_url = cfg.base_url
+        self.key_env = cfg.key_env
+        self.extra_headers = dict(cfg.extra_headers)
+        self._ollama_ok: Optional[bool] = None  # cache de la sonda local
 
     def _key(self) -> str:
+        if self.key_env is None:
+            return "ollama"  # dummy: Ollama no valida la clave
         return os.environ.get(self.key_env, "").strip()
 
     def available(self) -> bool:
-        return bool(self._key()) and httpx is not None
+        if httpx is None:  # pragma: no cover
+            return False
+        if self.name == "ollama":
+            return self._probe_ollama()
+        return bool(self._key())
+
+    def _probe_ollama(self) -> bool:
+        """Sonda barata a /api/tags (cacheada)."""
+        if self._ollama_ok is not None:
+            return self._ollama_ok
+        try:
+            host = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+            resp = httpx.get(f"{host}/api/tags", timeout=0.5)
+            self._ollama_ok = resp.status_code == 200
+        except Exception:
+            self._ollama_ok = False
+        return self._ollama_ok
 
     async def complete(self, model: str, messages: List[dict], **opts) -> str:
         if httpx is None:  # pragma: no cover
             raise ProviderError("httpx no está instalado")
         key = self._key()
-        if not key:
-            raise ProviderError(f"falta {self.key_env}")
-        body = {"model": model, "messages": messages}
+        if self.key_env is not None and not key:
+            raise ProviderUnavailable(f"falta {self.key_env}")
+
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        headers.update(self.extra_headers)
+        body: Dict[str, object] = {"model": model, "messages": messages}
         for k in ("temperature", "top_p", "max_tokens"):
             if k in opts:
                 body[k] = opts[k]
-        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(f"{self.base_url}/chat/completions", json=body, headers=headers)
-            if resp.status_code == 429:
-                raise RateLimitError(f"{self.name} 429")
-            if resp.status_code >= 400:
-                raise ProviderError(f"{self.name} {resp.status_code}: {resp.text[:200]}")
-            data = resp.json()
+        timeout = float(opts.get("timeout", 60.0))
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions", json=body, headers=headers
+                )
+        except httpx.TimeoutException as exc:
+            raise ProviderTimeout(f"{self.name}: timeout") from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"{self.name}: error de red: {exc}") from exc
+
+        if resp.status_code == 429:
+            raise RateLimitError(f"{self.name} 429")
+        if resp.status_code >= 500:
+            raise ServerError(f"{self.name} {resp.status_code}")
+        if resp.status_code >= 400:
+            raise ProviderError(f"{self.name} {resp.status_code}: {resp.text[:200]}")
+
+        data = resp.json()
         choices = data.get("choices") or []
         if not choices:
             raise ProviderError(f"{self.name}: respuesta sin choices")

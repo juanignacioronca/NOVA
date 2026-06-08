@@ -149,7 +149,17 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 1 — esqueleto del núcleo ✅ **COMPLETO**. Corre de punta a punta con texto, rutea por complejidad y deja registro. Modo stub funciona sin claves ni Ollama.
+- **Fase:** Prompt 2 — capa de modelos real ✅ **COMPLETO**. La capa de modelos llama **de verdad** a Ollama/Gemini/Groq/OpenRouter/DeepSeek; el stub quedó como último recurso. `doctor` y `chat` andando, con lanzadores a doble clic.
+
+### Construido (Prompt 2)
+- [x] **Cliente OpenAI-compatible único** (`models/providers/openai_compatible.py`, async, solo `httpx`) para TODOS los proveedores cambiando `base_url`+clave: `ollama` (`/v1`, clave dummy) · `groq` · `openrouter` (+ headers `HTTP-Referer`/`X-Title`) · `deepseek` · `gemini` (endpoint compatible). `gemini_client`/`ollama_client` quedaron como wrappers finos (+ `ollama_models()` para listar `/api/tags`).
+- [x] **`model_router` real:** cadena de resiliencia **primario → 429/5xx/timeout (retry backoff 1,2,4,8s) → `fallback` (Ollama) → stub**. Si falta la clave, salta directo al fallback (sin reintentar) con aviso a stderr (nunca loggea la clave). `complete_meta` devuelve qué `proveedor:modelo` respondió de verdad → se registra en el campo `modelo` del JSONL (incluido fallback/stub).
+- [x] **`nova/doctor.py`** (`python -m nova.doctor`): estado por proveedor (OK / sin clave / error + latencia) y modelos pulled de Ollama. No revienta si algo está caído.
+- [x] **`nova/chat.py`** (`python -m nova.chat`): REPL por texto; muestra respuesta + traza compacta (intención · complejidad · agente(s) · `proveedor:modelo`). `salir`/`exit`/Ctrl-C salen limpio.
+- [x] **Lanzadores a doble clic** (macOS, ejecutables): `run-nova.command` (chat) y `doctor.command`, con `cd "$(dirname "$0")"`, intérprete overrideable con `NOVA_PYTHON`, ventana que queda abierta. Nota Gatekeeper (1ª vez: clic derecho → Abrir).
+- [x] **`.env.example`** con las 5 claves + de dónde sacarlas gratis (AI Studio, console.groq.com, openrouter.ai). `.env` sigue en `.gitignore`.
+- [x] **Tests offline (11/11):** parseo `proveedor:modelo`, base_url/clave por proveedor, 429→fallback→stub, falta-clave→fallback. Sin red ni claves.
+- [x] **Verificado:** con clave real (simulada con proveedor falso) una consulta compleja la responde el modelo real (`groq`/`gemini` visibles en traza y registro); sin claves cae a local/stub sin error.
 
 ### Construido (Prompt 1)
 - [x] **Scaffold:** `pyproject.toml` (httpx, pyyaml, pytest, pytest-asyncio), `.gitignore` (`.env`, `logs/`), `.env.example`, `README.md`. Layout `src/nova/`.
@@ -165,6 +175,7 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** el target es 3.11+ (§7), pero el esqueleto se mantiene **compatible con 3.8** (`from __future__ import annotations`) para correr en la máquina de dev actual (3.8.6). Al subir a 3.11+ no hay que cambiar nada.
 - Instalar con `pip install -e ".[dev]"`. Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 2)
-- Todavía NO hay: percepción real (audio/video), herramientas reales (calendario/mail/web/clima), equipos completos con sub-agentes, memoria persistente (grafo/vectores/Obsidian), frontend (PWA), `app.py` (FastAPI + WebSocket).
+### Qué sigue (Prompt 3)
+- Multimodal (imágenes/audio/video) todavía NO: viene en Prompt 3/4. Por ahora solo texto.
+- Tampoco hay aún: percepción real (audio/video), herramientas reales (calendario/mail/web/clima), equipos completos con sub-agentes, memoria persistente (grafo/vectores/Obsidian), frontend (PWA), `app.py` (FastAPI + WebSocket), Docker.
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_

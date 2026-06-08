@@ -95,26 +95,34 @@ class Conductor:
         intent, complexity, entities = self._classify(user_text)
         # El modelo `conductor_simple` produce una nota de comprensión (best-effort).
         try:
-            note = await model_router.complete(
+            comp = await model_router.complete_meta(
                 self.understand_model,
                 [
                     {"role": "system", "content": "Resumí en una frase qué pide el usuario."},
                     {"role": "user", "content": user_text},
                 ],
             )
+            note, model = comp.text, comp.spec
         except Exception:  # pragma: no cover - el stub no falla
-            note = ""
-        return {"intent": intent, "complexity": complexity, "entities": entities, "note": note}
+            note, model = "", model_router.model_for(self.understand_model)
+        return {
+            "intent": intent,
+            "complexity": complexity,
+            "entities": entities,
+            "note": note,
+            "model": model,
+        }
 
     # --- paso 3 (helper): integración ---
-    async def _integrate(self, user_text: str, pmo: Result) -> str:
+    async def _integrate(self, user_text: str, pmo: Result) -> Tuple[str, str]:
         """Arma la respuesta final a partir del resultado del PMO.
 
-        Con un modelo real, el `conductor_complex` integra; en stub, cae a una
-        redacción determinista (el plan estructurado del PMO).
+        Devuelve (texto, `proveedor:modelo` que integró). Con un modelo real, el
+        `conductor_complex` integra; en stub, cae a una redacción determinista
+        (el plan estructurado del PMO).
         """
         try:
-            woven = await model_router.complete(
+            comp = await model_router.complete_meta(
                 self.integrate_model,
                 [
                     {"role": "system", "content": "Integrá el plan del equipo en una respuesta clara al usuario."},
@@ -122,10 +130,11 @@ class Conductor:
                 ],
             )
         except Exception:  # pragma: no cover
-            woven = ""
-        if woven and not woven.startswith("[stub:"):
-            return woven
-        return pmo.text
+            comp = None
+        if comp is not None and comp.text and not comp.text.startswith("[stub:"):
+            return comp.text, comp.spec
+        spec = comp.spec if comp is not None else model_router.model_for(self.integrate_model)
+        return pmo.text, spec
 
     # --- orquestación ---
     async def attend(self, user_text: str) -> str:
@@ -137,7 +146,7 @@ class Conductor:
             grupo="local",
             tarea=user_text,
             decision=f"comprension intent={intent} complejidad={complexity} entities={entities}",
-            modelo=model_router.model_for(self.understand_model),
+            modelo=u["model"],
             resultado_breve=u["note"] or f"intent={intent}",
         )
         await self.world.append_event(
@@ -146,18 +155,21 @@ class Conductor:
 
         task = Task(goal=user_text, intent=intent, entities=entities, complexity=complexity)
 
-        # Paso 2 — ruteo
+        # Paso 2 — ruteo (capturando qué proveedor/modelo respondió de verdad)
         if complexity == "simple":
             agente_local = self.registry.get("respuestas_rapidas")
             result = await agente_local.handle(task)  # delegación directa (local)
             final = result.text
+            responder = getattr(agente_local.last_completion, "spec", None) or model_router.model_for(
+                "respuestas_rapidas"
+            )
             agents_involved = ["respuestas_rapidas"]
             ruta = "local"
             decision = "ruteo → Grupo Local (respuestas_rapidas)"
         else:
             reply = await self.bus.request("pmo", task.to_payload())  # vía bus
             pmo_result = Result.from_payload(reply)
-            final = await self._integrate(user_text, pmo_result)
+            final, responder = await self._integrate(user_text, pmo_result)
             agents_involved = ["pmo", "estrategia_investigador"]
             ruta = "nube"
             decision = "ruteo → Grupo Nube (PMO → Estrategia)"
@@ -167,7 +179,7 @@ class Conductor:
             grupo=ruta,
             tarea=user_text,
             decision=decision,
-            modelo=model_router.model_for(self.understand_model),
+            modelo=responder,
             resultado_breve=", ".join(agents_involved),
         )
         await self.world.append_event(
@@ -180,7 +192,7 @@ class Conductor:
             grupo=ruta,
             tarea=user_text,
             decision="respuesta final entregada",
-            modelo=model_router.model_for(self.integrate_model if ruta == "nube" else self.understand_model),
+            modelo=responder,
             resultado_breve=final,
         )
         await self.world.append_event({"agente": "conductor", "fase": "respuesta", "ruta": ruta})
@@ -193,6 +205,7 @@ class Conductor:
             "understanding_note": u["note"],
             "route": ruta,
             "agents": agents_involved,
+            "model": responder,
             "final": final,
             "log_path": str(path),
         }

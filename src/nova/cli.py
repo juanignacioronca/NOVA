@@ -37,6 +37,7 @@ def _print_trace(conductor: Conductor) -> None:
     destino = "Grupo Local (Ollama)" if run["route"] == "local" else "Grupo Nube (PMO)"
     print(f"   ruta       : {run['route']}  →  {destino}")
     print(f"   agentes    : {' → '.join(run['agents'])}")
+    print(f"   modelo     : {run.get('model', '-')}")
     print("③ Respuesta final")
     for line in run["final"].splitlines() or [""]:
         print(f"   {line}")
