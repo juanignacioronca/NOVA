@@ -51,9 +51,24 @@ class Provider:
 
 
 def last_user_text(messages: List[dict]) -> str:
-    """Devuelve el contenido del último mensaje (para resúmenes/stub)."""
+    """Texto del último mensaje (para resúmenes/stub).
+
+    Soporta el formato visión (content como lista de partes): junta solo los
+    trozos de texto, ignorando las imágenes.
+    """
     for msg in reversed(messages):
         content = (msg or {}).get("content")
-        if content:
-            return str(content)
+        if not content:
+            continue
+        if isinstance(content, list):
+            texts = [
+                p.get("text", "")
+                for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            ]
+            joined = " ".join(t for t in texts if t).strip()
+            if joined:
+                return joined
+            continue
+        return str(content)
     return ""

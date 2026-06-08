@@ -149,7 +149,16 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 2 — capa de modelos real ✅ **COMPLETO**. La capa de modelos llama **de verdad** a Ollama/Gemini/Groq/OpenRouter/DeepSeek; el stub quedó como último recurso. `doctor` y `chat` andando, con lanzadores a doble clic.
+- **Fase:** Prompt 3 — Conductor real (comprensión + multimodal + aclaración) ✅ **COMPLETO**. El Conductor entiende con modelo (heurística de respaldo), acepta imágenes, **pregunta cuando le falta info**, sintetiza la respuesta final, defiende contra prompt injection y emite una **traza estructurada** consumible.
+
+### Construido (Prompt 3)
+- [x] **Motor de comprensión** (`core/comprension.py`): `comprender(texto, images, contexto) -> Intent` (`intencion, entidades, faltantes, complejidad, confianza, multimodal`). Pide **JSON estricto** al modelo, parsea con tolerancia (reintenta una vez "solo JSON"), escala a `conductor_complex` si baja confianza, y cae a **heurística** en stub. Detecta inyección.
+- [x] **Multimodal (paso 1: imágenes):** `Conductor.attend(texto, images=None)` arma mensajes formato visión OpenAI-compatible (`image_url` data-URL base64) y enruta a `conductor_vision` (en `models.yaml`: `gemini` primario + fallback local `ollama:qwen2.5vl:7b`, **forma de lista = cadena de fallback por-agente** en el router). `--img` en CLI, `/img <ruta> <texto>` en el REPL.
+- [x] **Diálogo de aclaración:** si faltan datos o la confianza < umbral → **una** pregunta concisa + `pending_clarification` en `WorldState`; el siguiente mensaje se **fusiona** y reevalúa (máx. 2 rondas; luego procede avisando el supuesto).
+- [x] **Ruteo + síntesis:** simple → local; complejo → PMO por bus y `conductor_complex` **sintetiza** (no pegotea); en stub cae al plan determinista.
+- [x] **Seguridad anti-inyección** (`core/security.py`): instrucciones de NOVA SOLO en `system`; texto del usuario/externo en `user` como DATO. `marcar_no_confiable(contenido, fuente)` para contenido externo (fases siguientes). `detectar_inyeccion` marca intentos de override en la traza **sin obedecerlos**. Documentado en **§11**.
+- [x] **Traza estructurada** (`core/trace.py`): `TraceEvent(ts, etapa, agente, grupo, modelo, detalle, estado)`. El Conductor mantiene `last_trace` y los **emite** por `on_event` (callback/cola async) además del JSONL. El REPL imprime el flujo en vivo; el frontend (Prompt 7) consumirá el mismo stream. (Sin frontend todavía.)
+- [x] **Tests offline (19/19):** comprensión estructurada, ambigüedad→pregunta→fusión, clasificación, inyección marcada y system intacto, imagen→modelo de visión. Sin red ni claves.
 
 ### Construido (Prompt 2)
 - [x] **Cliente OpenAI-compatible único** (`models/providers/openai_compatible.py`, async, solo `httpx`) para TODOS los proveedores cambiando `base_url`+clave: `ollama` (`/v1`, clave dummy) · `groq` · `openrouter` (+ headers `HTTP-Referer`/`X-Title`) · `deepseek` · `gemini` (endpoint compatible). `gemini_client`/`ollama_client` quedaron como wrappers finos (+ `ollama_models()` para listar `/api/tags`).
@@ -175,7 +184,20 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** el target es 3.11+ (§7), pero el esqueleto se mantiene **compatible con 3.8** (`from __future__ import annotations`) para correr en la máquina de dev actual (3.8.6). Al subir a 3.11+ no hay que cambiar nada.
 - Instalar con `pip install -e ".[dev]"`. Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 3)
-- Multimodal (imágenes/audio/video) todavía NO: viene en Prompt 3/4. Por ahora solo texto.
-- Tampoco hay aún: percepción real (audio/video), herramientas reales (calendario/mail/web/clima), equipos completos con sub-agentes, memoria persistente (grafo/vectores/Obsidian), frontend (PWA), `app.py` (FastAPI + WebSocket), Docker.
+### Qué sigue (Prompt 4 — Percepción + Grupo Local + Docker/ASUS)
+- Audio/video en vivo, percepción continua y **modo Sentinela** (muestreo adaptativo) → Prompt 4.
+- Grupo Local completo (Oído/STT, Voz/TTS, Memoria/contexto, Sentinela/visión), y despliegue Docker/ASUS con GPU.
+- Tampoco hay aún: herramientas reales (calendario/mail/web/clima), equipos completos con sub-agentes, memoria persistente (grafo/vectores/Obsidian), frontend (PWA) y su vista de flujo en vivo (consumirá el stream de `TraceEvent`), `app.py` (FastAPI + WebSocket).
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
+
+---
+
+## 11. Seguridad (buenas prácticas, tipo OpenClaw)
+
+La defensa central contra **prompt injection** es **estructural**, no un filtro de texto:
+
+- **Separación system / usuario.** Las instrucciones de comportamiento de NOVA van **solo** en el rol `system`. El texto del usuario y **todo contenido externo** (web, archivos, mails, mensajes) van en `user`. **Nunca** se concatena contenido no confiable dentro del system prompt.
+- **Contenido externo = DATOS, no instrucciones.** Se envuelve con `core.security.marcar_no_confiable(contenido, fuente)`, que lo delimita y aclara que no debe obedecerse. Las herramientas/web de fases siguientes pasan todo por ahí antes de dárselo al modelo.
+- **Alerta complementaria.** `core.security.detectar_inyeccion(texto)` detecta patrones de override ("ignora tus instrucciones", "actúa como…", "system:", etc.). NO se actúa sobre ellos: se marca `inyeccion_detectada` en el `Intent` y un evento `seguridad` (estado `alerta`) en la traza. La separación estructural es lo que protege; esto solo avisa.
+- **Bóveda de secretos.** Las claves viven solo en `.env` (en `.gitignore`), nunca en el código ni en logs. El free-tier de Gemini puede entrenar con los prompts → **nunca** mandar claves/credenciales/datos sensibles a la nube.
+- **Mínimo privilegio (a futuro).** Cuando se agreguen herramientas con efectos (enviar mail, agendar, controlar dispositivos), requerirán confirmación explícita y quedarán registradas.

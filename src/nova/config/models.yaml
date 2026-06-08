@@ -14,6 +14,11 @@ agents:
   # --- Conductor (la cara que habla con el usuario) ---
   conductor_simple:        ollama:qwen2.5:7b
   conductor_complex:       gemini:gemini-2.5-flash
+  # Multimodal (imágenes). Forma de lista = primario + fallback(s) por-agente.
+  # OJO: el tag local de visión debe existir (`ollama pull qwen2.5vl:7b`).
+  conductor_vision:
+    - gemini:gemini-2.5-flash
+    - ollama:qwen2.5vl:7b
 
   # --- Grupo Local (Ollama, $0, siempre activo) ---
   respuestas_rapidas:      ollama:qwen2.5:7b

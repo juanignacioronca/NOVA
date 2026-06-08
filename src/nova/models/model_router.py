@@ -70,11 +70,30 @@ def _split_spec(spec: str) -> Tuple[str, str]:
     return provider.strip(), model.strip()
 
 
-def _resolve_spec(agent: str) -> Tuple[str, str]:
-    """(proveedor, modelo) del agente; si no está en el roster usa el fallback."""
+def _iter_specs(value) -> List[str]:
+    """Normaliza el valor de un agente: string → [spec]; lista → [spec, ...]."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value if v]
+    return [str(value)]
+
+
+def _agent_specs(agent: str) -> List[Tuple[str, str]]:
+    """Cadena (proveedor, modelo) configurada para el agente (primario + fallbacks
+    por-agente). Si no está en el roster, usa el `defaults.fallback`."""
     agents = load_config().get("agents", {}) or {}
-    spec = agents.get(agent) or _defaults().get("fallback", "ollama:qwen2.5:7b")
-    return _split_spec(spec)
+    specs = _iter_specs(agents.get(agent))
+    if not specs:
+        specs = [_defaults().get("fallback", "ollama:qwen2.5:7b")]
+    return [_split_spec(s) for s in specs]
+
+
+def _resolve_spec(agent: str) -> Tuple[str, str]:
+    """(proveedor, modelo) primario del agente."""
+    return _agent_specs(agent)[0]
 
 
 def _fallback_spec() -> Tuple[str, str]:
@@ -90,10 +109,11 @@ def model_for(agent: str) -> str:
 def sample_model(provider: str) -> Optional[str]:
     """Un modelo representativo de un proveedor (para `doctor`)."""
     agents = load_config().get("agents", {}) or {}
-    for spec in agents.values():
-        prov, model = _split_spec(spec)
-        if prov == provider:
-            return model
+    for value in agents.values():
+        for spec in _iter_specs(value):
+            prov, model = _split_spec(spec)
+            if prov == provider:
+                return model
     if provider == _fallback_spec()[0]:
         return _fallback_spec()[1]
     return None
@@ -141,31 +161,36 @@ async def _attempt(provider: Provider, model: str, messages: List[dict], opts: d
 
 # --- punto de entrada ---
 async def complete_meta(agent: str, messages: List[dict], **opts) -> Completion:
-    """Como `complete`, pero devuelve qué proveedor/modelo respondió de verdad."""
-    prov_name, model = _resolve_spec(agent)
-    primary = _get_provider(prov_name)
+    """Como `complete`, pero devuelve qué proveedor/modelo respondió de verdad.
 
-    # 1) Primario (si está disponible: hay clave / host arriba).
-    if primary is not None and primary.available():
+    Recorre la cadena: specs del agente (primario + fallbacks por-agente) →
+    `defaults.fallback` (Ollama) → stub. Salta los no disponibles (sin clave/host
+    caído) sin reintentar en vano; reintenta con backoff solo ante 429/5xx/timeout.
+    """
+    chain = list(_agent_specs(agent))
+    fb = _fallback_spec()
+    if fb not in chain:
+        chain.append(fb)
+
+    tried: Set[Tuple[str, str]] = set()
+    for idx, (prov_name, model) in enumerate(chain):
+        if (prov_name, model) in tried:
+            continue
+        tried.add((prov_name, model))
+        provider = _get_provider(prov_name)
+        if provider is None:
+            continue
+        if not provider.available():
+            if prov_name != "ollama":
+                _notice(prov_name, "sin clave o no disponible; salto al siguiente")
+            continue
         try:
-            text = await _attempt(primary, model, messages, opts)
-            return Completion(text, prov_name, model, "primary")
+            text = await _attempt(provider, model, messages, opts)
+            return Completion(text, prov_name, model, "primary" if idx == 0 else "fallback")
         except ProviderError as exc:
-            _notice(prov_name, f"falló ({exc}); usando fallback")
-    elif primary is not None and primary.name != "ollama":
-        _notice(prov_name, "sin clave o no disponible; salto al fallback")
+            _notice(prov_name, f"falló ({exc}); siguiente en la cadena")
 
-    # 2) Fallback (Ollama local), si es distinto del primario y está disponible.
-    fb_name, fb_model = _fallback_spec()
-    fb = _get_provider(fb_name)
-    if fb is not None and fb is not primary and fb.available():
-        try:
-            text = await _attempt(fb, fb_model, messages, opts)
-            return Completion(text, fb_name, fb_model, "fallback")
-        except ProviderError as exc:
-            _notice(fb_name, f"fallback falló ({exc}); usando stub")
-
-    # 3) Stub (último recurso).
+    # Stub (último recurso).
     if _defaults().get("stub_if_unavailable", True):
         return Completion(_stub(agent, messages), "stub", agent, "stub")
 
