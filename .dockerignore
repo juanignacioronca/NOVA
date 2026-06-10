@@ -1,0 +1,30 @@
+# Nunca meter secretos ni basura en la imagen.
+.env
+.env.*
+!.env.example
+
+# Entornos / build
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Datos locales (no van a la imagen)
+logs/
+
+# Repo / dev (no se necesitan en runtime)
+.git/
+.gitignore
+.github/
+tests/
+deploy/
+*.command
+.DS_Store
+.idea/
+.vscode/

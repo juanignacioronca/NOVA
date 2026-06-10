@@ -1,0 +1,70 @@
+# NOVA — despliegue 24/7 (servicio + Ollama). Seguro por defecto.
+#
+#   Arranque:   docker compose up -d
+#   Con GPU:    docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# SEGURIDAD: el puerto de `nova` se publica SOLO en la LAN (NOVA_LAN_IP, por
+# defecto 127.0.0.1). Ollama NO se publica (solo red interna). NUNCA exponer a
+# internet: para acceso remoto fuera de casa, Tailscale (Prompt 7), no abrir puertos.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama   # modelos persistentes
+    networks:
+      - nova_net
+    # SIN `ports:` → Ollama solo es alcanzable por la red interna (servicio nova).
+
+  nova:
+    build: .
+    image: nova:latest
+    container_name: nova
+    depends_on:
+      - ollama
+    env_file:
+      - .env                          # claves SOLO en runtime (no en la imagen)
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - NOVA_HOST=0.0.0.0             # escucha interna; la LAN se ata en `ports:`
+      - NOVA_PORT=8000
+      - NOVA_LOG_DIR=/app/logs
+    volumes:
+      - ./logs:/app/logs              # registros JSONL (escribible)
+    ports:
+      # Atado a la LAN. Poné NOVA_LAN_IP=<ip-del-asus> en .env. Default localhost.
+      - "${NOVA_LAN_IP:-127.0.0.1}:8000:8000"
+    networks:
+      - nova_net
+    restart: unless-stopped
+
+    # --- Hardening ---
+    read_only: true                   # filesystem read-only…
+    tmpfs:
+      - /tmp                          # …salvo /tmp (efímero)
+    cap_drop:
+      - ALL                           # sin capabilities de Linux
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+
+  # Percepción (audio/video) OFF en el contenedor: un servidor headless no tiene
+  # mic/cámara. Captura en el dispositivo + cómputo en el ASUS = Prompt 7.
+  # OPCIÓN AVANZADA (solo si el ASUS tiene cámara/mic): correr el daemon
+  # `nova.run` con passthrough de dispositivos, p.ej.:
+  #   devices: ["/dev/video0:/dev/video0"]
+  #   group_add: ["video", "audio"]
+  # (requiere instalar el extra [perception] en la imagen y NO usar read_only).
+
+volumes:
+  ollama_models:
+
+networks:
+  nova_net:
+    driver: bridge

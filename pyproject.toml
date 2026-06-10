@@ -21,6 +21,12 @@ dev = [
     "pytest",
     "pytest-asyncio",
 ]
+# Servicio web (FastAPI + WebSocket). Va en la imagen Docker; en dev se instala
+# junto con [dev] para poder testear app.py sin levantar el servidor.
+server = [
+    "fastapi",
+    "uvicorn[standard]",
+]
 # Stack de percepción (audio/video/voz). NO requerido para tests (se mockea) ni
 # para `nova.chat`. Se importa de forma perezosa: si falta una lib, esa fuente
 # se degrada con aviso y el resto sigue. Instalar con: pip install -e ".[perception]"
@@ -37,6 +43,10 @@ perception = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Incluye los YAML de config en el wheel (instalación NO editable, ej. Docker).
+[tool.setuptools.package-data]
+"nova.config" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

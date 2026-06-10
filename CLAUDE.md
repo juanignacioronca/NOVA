@@ -150,7 +150,14 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 4 — Percepción + Grupo Local + avisos proactivos ✅ **COMPLETO**. NOVA tiene oídos, ojos y voz: loop siempre-activo (audio + texto + video) que alimenta el Estado del Mundo, responde por voz (Piper), modo **Sentinela** y **avisos proactivos**. Todo modular y degradable. Dev pasó a **Python 3.12** (venv `.venv`).
+- **Fase:** Prompt 5 — Docker + despliegue ASUS ✅ **COMPLETO**. NOVA pasa de script a **servicio**: FastAPI + WebSocket, empaquetado en Docker junto a Ollama, seguro por defecto (LAN, no-root, claves fuera de la imagen). Validado en el Mac (sin Docker: app por ASGI + wheel con los YAML); la imagen real se buildea en el ASUS.
+
+### Construido (Prompt 5)
+- [x] **Servicio** (`app.py`, FastAPI + WS): `GET /health`, `POST /chat` (texto→respuesta+traza), `WS /ws` (streamea `TraceEvent` en vivo + respuesta, reusa el stream del Prompt 3), `GET /` (página mínima HTML/JS inline, sin deps, para hablarle desde el navegador del teléfono). Conductor **por request** (registry/bus aislados) sobre un WorldState compartido. Bind por entorno (`NOVA_HOST/PORT`); la restricción a LAN se hace en el compose. Extra `[server]` (fastapi, uvicorn).
+- [x] **Empaquetado:** `Dockerfile` multi-stage (`python:3.12-slim`, venv → runtime liviano), usuario **no-root**, `HEALTHCHECK` contra `/health`, sin `.env`/claves en la imagen. `package-data` incluye los YAML en el wheel (instalación no editable). `NOVA_LOG_DIR` para logs escribibles. `.dockerignore` (excluye `.venv/.env/logs/tests/...`).
+- [x] **Compose:** `docker-compose.yml` (nova + ollama; `OLLAMA_HOST=http://ollama:11434`; modelos en volumen persistente; `restart: unless-stopped`; **puerto de nova solo en la LAN** vía `${NOVA_LAN_IP}`, Ollama **sin** publicar; **hardening**: `read_only`, `tmpfs /tmp`, `cap_drop: ALL`, `no-new-privileges`, límites de CPU/mem; percepción off). `docker-compose.gpu.yml` (override NVIDIA para Ollama).
+- [x] **Despliegue:** `deploy/README.md` (pasos ASUS Linux + nota Windows/WSL2 + GPU toolkit + **advertencia: no exponer a internet; remoto = Tailscale en Prompt 7**), `deploy/up.sh` (compose + pull de modelos), `deploy/smoke.sh` (build + run CPU-only + chequea `/health`,`/chat`,`/`).
+- [x] **Tests offline (28/28):** `/health`, `/chat` (stub→local), `/` y `WS /ws` (traza + respuesta) responden; app levanta sin red ni claves. Validado además: el wheel no-editable incluye `config/*.yaml`, y el compose ata nova a la LAN con hardening (ollama interno).
 
 ### Construido (Prompt 4)
 - [x] **Entorno 3.11+:** `pyproject` `requires-python=">=3.11"`; venv `.venv` (Python 3.12 de Homebrew). El código existente (3.8-compat) corre igual. Extra opcional `[perception]` con las libs pesadas (lazy import → sin ellas, la fuente degrada y los tests corren).
@@ -196,9 +203,9 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** desde Prompt 4 el dev corre en venv `.venv` (Python 3.12); el código se mantiene 3.8-compat (`from __future__ import annotations`), así que no hubo que tocar lo existente.
 - Instalar: `pip install -e ".[dev]"` (núcleo/texto) y opcional `pip install -e ".[perception]"` (audio/video/voz). Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 5 — Docker + despliegue ASUS)
-- Empaquetar NOVA en **Docker** y desplegar en la **ASUS con GPU** (Ollama + Metal/CUDA), para que el loop de percepción corra como servicio fuera del Mac de dev.
-- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; herramientas reales (calendario/mail/web/clima); equipos de nube completos con sub-agentes; memoria persistente (grafo/vectores/Obsidian); frontend (PWA) y su vista de flujo en vivo (consumirá el stream de `TraceEvent`); `app.py` (FastAPI + WebSocket).
+### Qué sigue (Prompt 6 — Herramientas)
+- **Herramientas reales** (tools de entrada/salida: calendario, mail, web, mapas, clima; y de salida: agendar, enviar) registradas en el Registry y usables por local y nube, con confirmación para las que tienen efectos y todo contenido externo pasado por `marcar_no_confiable`.
+- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; equipos de nube completos con sub-agentes; memoria persistente (grafo/vectores/Obsidian); frontend (PWA) y su vista de flujo en vivo (consumirá el stream de `TraceEvent`); acceso remoto fuera de casa (Tailscale, Prompt 7).
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
 
 ---
@@ -218,3 +225,11 @@ La defensa central contra **prompt injection** es **estructural**, no un filtro 
 - **Lo percibido es input NO confiable.** El audio transcripto y los eventos de visión se tratan como DATO (no instrucción): entran al Conductor por el rol `user`, con la misma defensa anti-inyección del texto. La fuente de audio marca `inyeccion` en el evento si detecta un intento de override; los avisos proactivos envuelven lo percibido con `marcar_no_confiable`.
 - **Local-first / los crudos no salen.** El audio y el video crudos, y la transcripción, se quedan **en local**. A la nube solo va texto (o un fotograma puntual) **cuando el Conductor escala algo complejo**, y **nunca** secretos ni credenciales (bóveda de secretos). La visión Sentinela usa modelo **local** por defecto (`sentinela_vision`: Ollama primario), con nube solo como fallback.
 - **Permisos del SO (TCC).** macOS pide permiso de micrófono y cámara en la 1ª ejecución; sin permiso (o sin hardware/modelo), esa fuente **degrada con aviso** y el resto sigue.
+
+### 11.2 Despliegue seguro (Prompt 5)
+
+- **Solo LAN, nunca WAN.** El puerto de `nova` se publica atado a `NOVA_LAN_IP` (default `127.0.0.1`), nunca a `0.0.0.0` público. **No abrir puertos del router a internet.** El acceso remoto fuera de casa se hace con **Tailscale** (Prompt 7), que no expone nada al WAN.
+- **Superficie mínima.** Ollama **no** publica puertos (solo red interna del compose); solo `nova` es alcanzable, y solo en la LAN.
+- **Contenedor endurecido.** No-root (`uid 10001`), `read_only` rootfs + `tmpfs /tmp`, `cap_drop: ALL`, `no-new-privileges`, sin host network, límites de CPU/memoria, `restart: unless-stopped`.
+- **Secretos fuera de la imagen.** Las claves llegan **solo en runtime** por `.env`/`env_file`; jamás se copian a la imagen (`.dockerignore` excluye `.env`) ni se loggean. La imagen no contiene `.env`.
+- **Percepción off en el servidor.** Un contenedor headless no tiene mic/cámara; capturar dispositivos dentro del contenedor es opción avanzada documentada. La solución limpia (captura en el dispositivo, cómputo en el ASUS) es del Prompt 7.
