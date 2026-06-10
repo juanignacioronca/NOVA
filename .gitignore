@@ -4,6 +4,9 @@
 # Registros de agentes (los lee la auditoría, no van al repo)
 logs/
 
+# Datos locales (calendario, etc.)
+data/
+
 # Python
 __pycache__/
 *.py[cod]

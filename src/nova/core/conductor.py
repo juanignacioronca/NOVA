@@ -17,15 +17,29 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..agents import DEFAULT_AGENTS
 from ..logging.registro import Registro
 from ..models import model_router
+from ..tools import register_default_tools
+from ..tools.base import RequiereConfirmacion, ToolError
+from ..tools.executor import ToolExecutor
 from . import comprension
 from .comprension import Intent
 from .message_bus import MessageBus
 from .registry import Registry
+from .security import _norm  # normaliza (minúsculas, sin acentos)
 from .task import Result, Task
 from .trace import EventCallback, TraceEvent, emit
 from .world_state import WorldState
 
 MAX_RONDAS_ACLARACION = 2
+_AFIRMATIVO = {"si", "dale", "ok", "okay", "confirmo", "confirmar", "hacelo", "hazlo", "obvio", "sip", "yes", "claro", "de una", "adelante"}
+_NEGATIVO = {"no", "cancela", "cancelar", "nop", "mejor no", "para", "negativo", "cancelalo"}
+
+
+def _afirmativo(texto: str) -> bool:
+    return _norm(texto).strip(" .!") in _AFIRMATIVO
+
+
+def _negativo(texto: str) -> bool:
+    return _norm(texto).strip(" .!") in _NEGATIVO
 
 SINTESIS_SYSTEM = (
     "Sos NOVA, claro y directo. Integrá los resultados del equipo en UNA respuesta "
@@ -58,12 +72,17 @@ class Conductor:
         self.last_run: Dict[str, Any] = {}
         self.last_trace: List[TraceEvent] = []
         self._tarea = ""
+        # Capa de herramientas: registra el set y crea el executor (allowlist+permisos).
+        register_default_tools(self.registry)
+        self.tools = ToolExecutor(self.registry, self.world, self.registro)
         self._ensure_agents()
 
     def _ensure_agents(self) -> None:
         for cls in DEFAULT_AGENTS:
             if self.registry.get(cls.name) is None:
-                agent = cls(bus=self.bus, world=self.world, registro=self.registro)
+                agent = cls(
+                    bus=self.bus, world=self.world, registro=self.registro, tools=self.tools
+                )
                 self.registry.add(agent)
 
     # --- traza: escribe JSONL (opcional) + emite TraceEvent al stream ---
@@ -125,13 +144,36 @@ class Conductor:
         comp = await model_router.complete_meta(self.vision_model, messages)
         return comp.text, comp.spec
 
+    async def _pedir_confirmacion(self, texto: str, intent: Intent, rc: RequiereConfirmacion) -> str:
+        """Una tool `high` pidió confirmación: devolvemos la pregunta (la acción ya
+        quedó pendiente en el WorldState; se ejecuta cuando el usuario diga "sí")."""
+        await self._emit("confirmacion", "conductor", "-", f"tool:{rc.tool}", rc.mensaje, estado="pregunta")
+        return self._finish(texto, intent, "confirmacion", [rc.tool], f"tool:{rc.tool}", rc.mensaje, question=rc.mensaje)
+
     # --- orquestación ---
     async def attend(self, texto: str, images: Optional[List[str]] = None) -> str:
         images = images or []
         self.last_trace = []
         self._tarea = texto
 
-        # 0) Fusión con aclaración pendiente (solo texto; una imagen es un pedido nuevo).
+        # 0a) ¿Hay una acción de riesgo (tool `high`) esperando confirmación?
+        accion = await self.world.get("pending_action")
+        if accion and not images:
+            if _afirmativo(texto):
+                outcome = await self.tools.confirmar_pendiente()
+                final = outcome.content if outcome else "No había ninguna acción pendiente."
+                await self._emit("accion", "conductor", accion.get("grupo", "-"),
+                                 f"tool:{accion['tool']}", "acción confirmada y ejecutada", resultado=final)
+                ok_intent = Intent(intencion="confirmar", complejidad="simple", confianza=1.0)
+                return self._finish(texto, ok_intent, "accion", [accion["tool"]], f"tool:{accion['tool']}", final)
+            if _negativo(texto):
+                await self.tools.cancelar_pendiente()
+                await self._emit("accion", "conductor", "-", "-", "acción cancelada por el usuario")
+                no_intent = Intent(intencion="cancelar", complejidad="simple", confianza=1.0)
+                return self._finish(texto, no_intent, "accion", [], "-", "Listo, lo cancelé.")
+            # Si no es sí/no, la acción queda pendiente y seguimos con el pedido nuevo.
+
+        # 0b) Fusión con aclaración pendiente (solo texto; una imagen es un pedido nuevo).
         pendiente = await self.world.get("pending_clarification")
         rondas = 0
         texto_efectivo = texto
@@ -184,7 +226,10 @@ class Conductor:
             await self._emit("agente", "conductor_vision", grupo, responder, "respuesta multimodal", resultado=final)
         elif intent.complejidad == "simple":
             agente_local = self.registry.get("respuestas_rapidas")
-            result = await agente_local.handle(task)  # delegación directa (local)
+            try:
+                result = await agente_local.handle(task)  # delegación directa (local)
+            except RequiereConfirmacion as rc:
+                return await self._pedir_confirmacion(texto, intent, rc)
             final = result.text
             responder = getattr(agente_local.last_completion, "spec", None) or model_router.model_for("respuestas_rapidas")
             agents_involved, ruta, grupo = ["respuestas_rapidas"], "local", "local"
@@ -192,7 +237,10 @@ class Conductor:
                              resultado=final, escribir_log=False)
         else:
             await self._emit("ruteo", "conductor", "nube", "-", "→ PMO (Grupo Nube)")
-            reply = await self.bus.request("pmo", task.to_payload())  # vía bus
+            try:
+                reply = await self.bus.request("pmo", task.to_payload())  # vía bus
+            except RequiereConfirmacion as rc:
+                return await self._pedir_confirmacion(texto, intent, rc)
             pmo_result = Result.from_payload(reply)
             pmo_model = getattr(self.registry.get("pmo").last_completion, "spec", "-")
             est_model = getattr(self.registry.get("estrategia_investigador").last_completion, "spec", "-")

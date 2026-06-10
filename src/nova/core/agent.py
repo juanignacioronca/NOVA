@@ -30,10 +30,12 @@ class BaseAgent:
         bus: Optional[MessageBus] = None,
         world: Optional[WorldState] = None,
         registro: Optional[Any] = None,
+        tools: Optional[Any] = None,
     ) -> None:
         self.bus = bus
         self.world = world
         self.registro = registro
+        self.tools = tools  # ToolExecutor (capa de herramientas), opcional
         # Última respuesta de la capa de modelos (qué proveedor/modelo contestó).
         self.last_completion = None  # type: Optional[Completion]
         if bus is not None:
@@ -60,6 +62,22 @@ class BaseAgent:
         """Pide a otro agente que resuelva una Task y devuelve su Result."""
         reply = await self.request(to, task.to_payload())
         return Result.from_payload(reply)
+
+    # --- herramientas ---
+    async def use_tool(self, name: str, args: Optional[dict] = None, confirmado: bool = False):
+        """Invoca una tool por el `ToolExecutor`.
+
+        Levanta `PermisoDenegado` / `RequiereConfirmacion` (la capa de seguridad).
+        """
+        if self.tools is None:
+            raise RuntimeError(f"{self.name}: no tiene ToolExecutor conectado")
+        return await self.tools.invoke(self, name, args or {}, confirmado=confirmado)
+
+    async def tool_loop(self, messages: List[dict], max_steps: Optional[int] = None) -> str:
+        """Loop acotado pensar→tool→pensar (delegado al executor)."""
+        if self.tools is None:
+            return await self.think(messages)
+        return await self.tools.tool_loop(self, messages, max_steps=max_steps)
 
     # --- modelos ---
     async def think(self, messages: List[dict], **opts) -> str:

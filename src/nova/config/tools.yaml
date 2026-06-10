@@ -1,0 +1,31 @@
+# NOVA — capa de herramientas: ALLOWLIST + permisos por agente (least-privilege).
+# SOLO lo listado en `allowlist` es usable; un agente solo puede invocar las tools
+# que tenga en `permisos`. Ver CLAUDE.md §11.
+#
+# Riesgo (declarado en cada tool): safe (lectura) · low (escritura reversible) ·
+# high (efecto sensible → requiere confirmación del usuario).
+
+defaults:
+  max_steps: 4            # tope del loop pensar→tool→pensar (también es seguridad)
+
+# Únicas herramientas habilitadas en todo el sistema.
+allowlist:
+  - clima
+  - buscar_web
+  - buscar_lugar
+  - leer_calendario
+  - agendar_evento
+  - crear_recordatorio
+  - set_timer
+  - enviar_correo
+
+# Qué puede usar cada agente (lo no listado = denegado).
+permisos:
+  conductor:               [clima, buscar_web, buscar_lugar, leer_calendario, agendar_evento, crear_recordatorio, set_timer, enviar_correo]
+  respuestas_rapidas:      [clima, leer_calendario, agendar_evento, crear_recordatorio, set_timer]
+  estrategia_investigador: [buscar_web, buscar_lugar, clima]
+  pmo:                     [leer_calendario, agendar_evento, crear_recordatorio]
+  finanzas_roi:            [buscar_web]
+  # Sin permisos (no usan tools):
+  memoria_contexto:        []
+  sentinela:               []

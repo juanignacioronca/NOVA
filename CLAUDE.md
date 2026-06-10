@@ -150,7 +150,16 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 5 — Docker + despliegue ASUS ✅ **COMPLETO**. NOVA pasa de script a **servicio**: FastAPI + WebSocket, empaquetado en Docker junto a Ollama, seguro por defecto (LAN, no-root, claves fuera de la imagen). Validado en el Mac (sin Docker: app por ASGI + wheel con los YAML); la imagen real se buildea en el ASUS.
+- **Fase:** Prompt 6 — Herramientas (tools layer) ✅ **COMPLETO**. NOVA tiene **manos**: los agentes invocan herramientas con un protocolo JSON agnóstico de modelo, con la **seguridad en el centro** (allowlist + permisos por agente + confirmación de acciones + contenido externo no confiable + loop acotado + logging).
+
+### Construido (Prompt 6)
+- [x] **Registro de tools + allowlist** (`config/tools.yaml`): cada tool declara `name`, `descripcion`, `args_schema`, `riesgo` (`safe`/`low`/`high`) y `grupos`. Solo lo listado en `allowlist` es usable; `permisos` por agente = **least-privilege** (lo no listado, denegado). Tools registradas en el Registry.
+- [x] **Protocolo agnóstico de modelo** (`tools/executor.py`): el agente emite `{"tool": "...", "args": {...}}` (parseo tolerante, `parse_tool_call`); el `ToolExecutor` valida args contra el schema, chequea allowlist + permiso + riesgo, ejecuta, envuelve lo externo y **registra** (tool, args, agente, permitido/denegado, confirmado, resultado). `BaseAgent.use_tool(name, args)` levanta `PermisoDenegado`/`RequiereConfirmacion`. **Loop de tool-use acotado** (`tool_loop`, máx. N=`defaults.max_steps`).
+- [x] **Riesgo + confirmación:** `safe`/`low` → directo; `high` → guarda `pending_action` en el WorldState y NOVA devuelve "¿Confirmás?"; **solo ejecuta con el "sí"** (reusa el diálogo del Prompt 3, integrado en el Conductor). `no` cancela.
+- [x] **Contenido externo no confiable:** los resultados de tools `externo` (web, lugares) pasan por `marcar_no_confiable(contenido, fuente)` antes de llegar a un agente/modelo → no se obedecen instrucciones embebidas (defensa anti-inyección del Prompt 3, acá crítica).
+- [x] **Set inicial (real con red, stub sin red):** `clima` (Open-Meteo, safe), `buscar_web` (DuckDuckGo, safe, externo), `buscar_lugar` (Nominatim/OSM, safe, externo), `leer_calendario` (safe) + `agendar_evento` (low) sobre store local JSON, `crear_recordatorio`/`set_timer` (low, alimentan los avisos proactivos del Prompt 4), `enviar_correo` (high, con confirmación; backend stub). Degradan a stub ante falta de red (`NOVA_FORCE_STUB=1` los fuerza, offline/tests).
+- [x] **Integración:** `respuestas_rapidas` mapea intención→tool (clima/timer/recordatorio/calendario); `estrategia_investigador` usa `buscar_web` (resultado ya marcado no confiable). Cada invocación queda en el registro JSONL.
+- [x] **Tests offline (39/39):** allowlist + permisos (denegado sin permiso/fuera de allowlist), `high` pide confirmación y solo corre con el "sí", contenido web marcado no confiable, loop respeta el tope N, tools en stub deterministas, integración por el Conductor. Sin red ni claves.
 
 ### Construido (Prompt 5)
 - [x] **Servicio** (`app.py`, FastAPI + WS): `GET /health`, `POST /chat` (texto→respuesta+traza), `WS /ws` (streamea `TraceEvent` en vivo + respuesta, reusa el stream del Prompt 3), `GET /` (página mínima HTML/JS inline, sin deps, para hablarle desde el navegador del teléfono). Conductor **por request** (registry/bus aislados) sobre un WorldState compartido. Bind por entorno (`NOVA_HOST/PORT`); la restricción a LAN se hace en el compose. Extra `[server]` (fastapi, uvicorn).
@@ -203,9 +212,10 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** desde Prompt 4 el dev corre en venv `.venv` (Python 3.12); el código se mantiene 3.8-compat (`from __future__ import annotations`), así que no hubo que tocar lo existente.
 - Instalar: `pip install -e ".[dev]"` (núcleo/texto) y opcional `pip install -e ".[perception]"` (audio/video/voz). Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 6 — Herramientas)
-- **Herramientas reales** (tools de entrada/salida: calendario, mail, web, mapas, clima; y de salida: agendar, enviar) registradas en el Registry y usables por local y nube, con confirmación para las que tienen efectos y todo contenido externo pasado por `marcar_no_confiable`.
-- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; equipos de nube completos con sub-agentes; memoria persistente (grafo/vectores/Obsidian); frontend (PWA) y su vista de flujo en vivo (consumirá el stream de `TraceEvent`); acceso remoto fuera de casa (Tailscale, Prompt 7).
+### Qué sigue (Prompt 7 — Grupo Nube: equipos reales + sub-agentes + skills inter-agente)
+- **Equipos de nube reales** (PMO con sub-agentes, Transversales Estrategia/Finanzas, Áreas) que reemplazan los stubs, coordinándose por el `MessageBus` con **skills inter-agente** y usando la capa de herramientas del Prompt 6.
+- Probablemente también: acceso remoto fuera de casa (Tailscale) y frontend/PWA con la vista de flujo en vivo (consume el stream de `TraceEvent`).
+- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; memoria persistente (grafo/vectores/Obsidian); proveedores reales con OAuth (Google Calendar, SMTP real) detrás de las mismas interfaces de tools.
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
 
 ---
@@ -233,3 +243,15 @@ La defensa central contra **prompt injection** es **estructural**, no un filtro 
 - **Contenedor endurecido.** No-root (`uid 10001`), `read_only` rootfs + `tmpfs /tmp`, `cap_drop: ALL`, `no-new-privileges`, sin host network, límites de CPU/memoria, `restart: unless-stopped`.
 - **Secretos fuera de la imagen.** Las claves llegan **solo en runtime** por `.env`/`env_file`; jamás se copian a la imagen (`.dockerignore` excluye `.env`) ni se loggean. La imagen no contiene `.env`.
 - **Percepción off en el servidor.** Un contenedor headless no tiene mic/cámara; capturar dispositivos dentro del contenedor es opción avanzada documentada. La solución limpia (captura en el dispositivo, cómputo en el ASUS) es del Prompt 7.
+
+### 11.3 Modelo de permisos de herramientas (Prompt 6)
+
+La capa de tools es donde más se concretan las buenas prácticas. Reglas:
+
+- **Allowlist explícita.** Solo las herramientas en `config/tools.yaml → allowlist` existen para el sistema. Nada se ejecuta "porque sí".
+- **Least-privilege por agente.** `permisos` lista, por agente, qué tools puede invocar; lo no listado se **deniega** (`PermisoDenegado`). Ej.: `estrategia` puede buscar en la web pero **no** enviar correos; `memoria`/`sentinela` no usan tools.
+- **Riesgo y confirmación.** `safe` (lectura) y `low` (escritura reversible) corren directo; `high` (enviar, borrar, gastar) **exige confirmación explícita** del usuario; la acción queda en `pending_action` y solo se ejecuta con el "sí".
+- **Contenido externo = DATOS.** Todo resultado de tool `externo` (web, lugares, y a futuro correo/archivos) se envuelve con `marcar_no_confiable` antes de llegar a un modelo → no se obedecen instrucciones embebidas.
+- **Validación + loop acotado.** Los args se validan contra `args_schema`; el loop pensar→tool→pensar tiene tope `max_steps` (evita loops descontrolados; es también una medida de seguridad).
+- **Auditoría.** Cada invocación (permitida o denegada, con args y resultado breve) se escribe en el registro JSONL → insumo de la auditoría.
+- **Claves de tools** (cuando las haya, ej. Brave/Tavily/SMTP) solo desde `.env`, nunca en código ni en logs.

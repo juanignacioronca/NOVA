@@ -14,9 +14,11 @@ if str(SRC) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
-def hermetic_env(monkeypatch):
-    """Fuerza modo stub: Ollama inalcanzable y sin claves cloud → determinista."""
+def hermetic_env(monkeypatch, tmp_path):
+    """Fuerza modo stub (sin red ni claves) y aísla los datos locales por test."""
     monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:9")  # puerto sin servicio
+    monkeypatch.setenv("NOVA_FORCE_STUB", "1")               # tools sin red (deterministas)
+    monkeypatch.setenv("NOVA_DATA_DIR", str(tmp_path / "data"))  # calendario aislado
     for key in (
         "GEMINI_API_KEY",
         "GROQ_API_KEY",

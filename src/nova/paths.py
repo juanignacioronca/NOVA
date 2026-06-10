@@ -13,7 +13,16 @@ PROJECT_ROOT: Path = PACKAGE_ROOT.parents[1]
 CONFIG_DIR: Path = PACKAGE_ROOT / "config"
 MODELS_YAML: Path = CONFIG_DIR / "models.yaml"
 PERCEPTION_YAML: Path = CONFIG_DIR / "perception.yaml"
+TOOLS_YAML: Path = CONFIG_DIR / "tools.yaml"
 # Logs: por defecto `<repo>/logs`, overridable con NOVA_LOG_DIR (Docker monta
 # un volumen escribible ahí, ya que el resto del filesystem es read-only).
 LOGS_DIR: Path = Path(os.environ.get("NOVA_LOG_DIR", str(PROJECT_ROOT / "logs")))
 ENV_FILE: Path = PROJECT_ROOT / ".env"
+
+
+def data_dir() -> Path:
+    """Carpeta de datos locales (calendario, etc.). Overridable con NOVA_DATA_DIR.
+
+    Se lee en cada llamada para respetar overrides por test/runtime.
+    """
+    return Path(os.environ.get("NOVA_DATA_DIR", str(PROJECT_ROOT / "data")))

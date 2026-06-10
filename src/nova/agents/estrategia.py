@@ -9,6 +9,7 @@ from __future__ import annotations
 from ..core.agent import BaseAgent
 from ..core.registry import register
 from ..core.task import Result, Task
+from ..tools.base import ToolError
 
 
 @register
@@ -28,9 +29,17 @@ class EstrategiaInvestigadorAgent(BaseAgent):
         ]
         finding = await self.think(messages)
         breve = f"Hallazgo · {task.goal}: {finding}"
-        self.log(
-            tarea=task.goal,
-            decision="investigación (stub)",
-            resultado_breve=breve,
-        )
-        return Result(ok=True, text=breve, agent=self.name, data={"goal": task.goal})
+
+        # Investiga en la web; el resultado entra YA marcado como NO confiable.
+        externo = ""
+        if self.tools is not None:
+            try:
+                out = await self.use_tool("buscar_web", {"consulta": task.goal})
+                externo = out.content
+            except ToolError:
+                externo = ""
+        if externo:
+            breve += f"\nFuente web (no confiable):\n{externo}"
+
+        self.log(tarea=task.goal, decision="investigación + buscar_web", resultado_breve=breve)
+        return Result(ok=True, text=breve, agent=self.name, data={"goal": task.goal, "externo": bool(externo)})
