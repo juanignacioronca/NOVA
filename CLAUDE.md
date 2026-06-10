@@ -150,7 +150,16 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 6 — Herramientas (tools layer) ✅ **COMPLETO**. NOVA tiene **manos**: los agentes invocan herramientas con un protocolo JSON agnóstico de modelo, con la **seguridad en el centro** (allowlist + permisos por agente + confirmación de acciones + contenido externo no confiable + loop acotado + logging).
+- **Fase:** Prompt 7 — Grupo Nube (equipos reales) ✅ **COMPLETO**. Los stubs se reemplazaron por la **"empresa"**: PMO que descompone y reparte, transversales (Finanzas, Estrategia) que cruzan, áreas con sub-agentes, y **skills inter-agente** — todo **data-driven** (config, no 30 archivos) y **acotado** en pasos/costo.
+
+### Construido (Prompt 7)
+- [x] **Roster declarativo** (`config/teams.yaml`): cada equipo (PMO, Estrategia, Finanzas, y áreas Inversiones/Ecommerce/Laboral/Fitness/Idiomas/Recreacional/DesarrolloPersonal/Multifacético) con sub-agentes `{name, rol, model_key, tools, puede_consultar}`. Agregar un equipo = editar config (habilita que la auditoría proponga equipos). Claves nuevas en `models.yaml` siguiendo la regla (líderes→gemini, investigador→groq, razonamiento→deepseek, estructurado→local).
+- [x] **`SubAgent` genérico** (`agents/sub_agent.py`): un solo tipo cubre los ~18 sub-agentes — system desde `rol`, modelo por `model_key`, `tools` con el `tool_loop` acotado (Prompt 6), y `consultar()` inter-agente solo a su allowlist (`puede_consultar`).
+- [x] **Empresa / PMO** (`core/empresa.py`): **Planificador** descompone (modelo→JSON; stub→heurística) con `area`+deps+flags `requiere_finanzas`/`requiere_estrategia`; **Coordinador** despacha por el bus (paralelo lo independiente, secuencial lo dependiente) y aplica topes; **Integrador** sintetiza el entregable. El Conductor llama a la empresa para lo complejo (reemplaza el PMO stub) e hila su síntesis final.
+- [x] **Transversales cruzando:** las subtareas con `requiere_finanzas` consultan a Finanzas (todo gasto pasa por ahí) y con `requiere_estrategia` a Estrategia, vía el skill inter-agente (negociación Recreacional ↔ Finanzas demostrada en el ejemplo del cerro).
+- [x] **Topes de seguridad/costo** (`config/empresa.yaml`): `max_subtareas` (8), `max_inter_agent_hops` (3), `max_model_calls` (20). Al alcanzarse, corta con aviso e integra lo que haya (anti fan-out, $0-friendly).
+- [x] **Ruteo a áreas + Multifacético:** mapea por tema; si ninguna calza → Multifacético y se loggea "tema sin equipo" (insumo de auditoría). Respeta permisos de tools (grant por sub-agente, acotado a la allowlist global) y contenido externo no confiable.
+- [x] **Tests offline (46/46):** descompone→reparte→integra, gasto pasa por Finanzas, consulta inter-agente respeta allowlist y tope de hops, tema desconocido→Multifacético logueado, los tres topes cortan el fan-out. Sin red ni claves.
 
 ### Construido (Prompt 6)
 - [x] **Registro de tools + allowlist** (`config/tools.yaml`): cada tool declara `name`, `descripcion`, `args_schema`, `riesgo` (`safe`/`low`/`high`) y `grupos`. Solo lo listado en `allowlist` es usable; `permisos` por agente = **least-privilege** (lo no listado, denegado). Tools registradas en el Registry.
@@ -212,10 +221,9 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** desde Prompt 4 el dev corre en venv `.venv` (Python 3.12); el código se mantiene 3.8-compat (`from __future__ import annotations`), así que no hubo que tocar lo existente.
 - Instalar: `pip install -e ".[dev]"` (núcleo/texto) y opcional `pip install -e ".[perception]"` (audio/video/voz). Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 7 — Grupo Nube: equipos reales + sub-agentes + skills inter-agente)
-- **Equipos de nube reales** (PMO con sub-agentes, Transversales Estrategia/Finanzas, Áreas) que reemplazan los stubs, coordinándose por el `MessageBus` con **skills inter-agente** y usando la capa de herramientas del Prompt 6.
-- Probablemente también: acceso remoto fuera de casa (Tailscale) y frontend/PWA con la vista de flujo en vivo (consume el stream de `TraceEvent`).
-- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; memoria persistente (grafo/vectores/Obsidian); proveedores reales con OAuth (Google Calendar, SMTP real) detrás de las mismas interfaces de tools.
+### Qué sigue (Prompt 8 — Memoria: grafo + vectores + Obsidian)
+- **Memoria persistente**: grafo (entidades/relaciones) + vectores (búsqueda semántica) + capa **Obsidian** (markdown navegable), que guarda los registros de todos los agentes y alimenta el caché vivo del Estado del Mundo.
+- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; acceso remoto fuera de casa (Tailscale); frontend/PWA con la vista de flujo en vivo (consume el stream de `TraceEvent`); proveedores reales con OAuth (Google Calendar, SMTP real) detrás de las mismas interfaces de tools.
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
 
 ---
@@ -255,3 +263,13 @@ La capa de tools es donde más se concretan las buenas prácticas. Reglas:
 - **Validación + loop acotado.** Los args se validan contra `args_schema`; el loop pensar→tool→pensar tiene tope `max_steps` (evita loops descontrolados; es también una medida de seguridad).
 - **Auditoría.** Cada invocación (permitida o denegada, con args y resultado breve) se escribe en el registro JSONL → insumo de la auditoría.
 - **Claves de tools** (cuando las haya, ej. Brave/Tavily/SMTP) solo desde `.env`, nunca en código ni en logs.
+
+### 11.4 Topes y allowlist inter-agente (Prompt 7)
+
+La empresa multiagente es potente y por eso va **acotada** (lección de "autonomía descontrolada"):
+
+- **Allowlist inter-agente (least-privilege).** Un sub-agente solo puede consultar a quien esté en su `puede_consultar` (`teams.yaml`); cualquier otra consulta → `PermisoDenegado`. No hay fan-out arbitrario entre agentes.
+- **Topes por petición** (`empresa.yaml`): `max_subtareas` (corta la descomposición), `max_inter_agent_hops` (corta las consultas entre agentes), `max_model_calls` (corta el gasto de modelo). Al alcanzar un tope, se corta con aviso y se integra lo hecho. Controla costo (clave con free-tiers) y es una barrera de seguridad.
+- **El gasto pasa por Finanzas.** Toda subtarea con efecto económico (`requiere_finanzas`) cruza por el equipo de Finanzas antes de integrar — control de costo incorporado al diseño.
+- **Tools y contenido externo siguen acotados.** Los sub-agentes solo reciben las tools declaradas en su spec (grant acotado a la allowlist global del Prompt 6); el contenido externo sigue marcado no confiable y las acciones `high` siguen pidiendo confirmación.
+- **Tema sin equipo → Multifacético, logueado.** Lo que no calza en un área cae en Multifacético y queda registrado, para que la auditoría (Opus, fuera del flujo) proponga crear el equipo y vos lo apruebes editando `teams.yaml`.

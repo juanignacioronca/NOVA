@@ -16,21 +16,16 @@ async def test_simple_se_resuelve_en_local(tmp_path):
     assert final  # respuesta no vacía
 
 
-async def test_complejo_pasa_por_pmo_y_consulta_estrategia(tmp_path):
+async def test_complejo_pasa_por_la_empresa(tmp_path):
     conductor = Conductor(registro=Registro(tmp_path))
     # Pedido complejo YA especificado (fecha + compañía) → no pide aclaración.
     final = await conductor.attend(
-        "organizá un finde de trekking el sábado que viene con mi hermano"
+        "organizá un finde de trekking al cerro el sábado que viene con mi hermano con $200 de presupuesto"
     )
 
     assert conductor.last_run["complexity"] == "complejo"
     assert conductor.last_run["route"] == "nube"
-    assert "pmo" in conductor.last_run["agents"]
-    assert "estrategia_investigador" in conductor.last_run["agents"]
-
-    # El PMO consultó a Estrategia POR EL BUS (request directo).
-    history = conductor.bus.history()
-    assert any(
-        h["kind"] == "request" and h["to"] == "estrategia_investigador" for h in history
-    ), "el PMO no consultó a Estrategia por el bus"
-    assert "Plan (PMO)" in final  # en stub, la síntesis cae al plan determinista
+    # La empresa lo manejó y lo ruteó al área correcta.
+    assert "empresa" in conductor.last_run["agents"]
+    assert "recreacional" in conductor.last_run["agents"]
+    assert final

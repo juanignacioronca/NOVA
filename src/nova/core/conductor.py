@@ -22,6 +22,7 @@ from ..tools.base import RequiereConfirmacion, ToolError
 from ..tools.executor import ToolExecutor
 from . import comprension
 from .comprension import Intent
+from .empresa import Empresa
 from .message_bus import MessageBus
 from .registry import Registry
 from .security import _norm  # normaliza (minúsculas, sin acentos)
@@ -76,6 +77,8 @@ class Conductor:
         register_default_tools(self.registry)
         self.tools = ToolExecutor(self.registry, self.world, self.registro)
         self._ensure_agents()
+        # Grupo Nube: la "empresa" (PMO + transversales + áreas), data-driven.
+        self.empresa = Empresa(self.bus, self.world, self.registro, self.tools, on_event=self.on_event)
 
     def _ensure_agents(self) -> None:
         for cls in DEFAULT_AGENTS:
@@ -236,20 +239,18 @@ class Conductor:
             await self._emit("agente", "respuestas_rapidas", grupo, responder, "resolvió local",
                              resultado=final, escribir_log=False)
         else:
-            await self._emit("ruteo", "conductor", "nube", "-", "→ PMO (Grupo Nube)")
+            await self._emit("ruteo", "conductor", "nube", "-", "→ Empresa (PMO + áreas)")
             try:
-                reply = await self.bus.request("pmo", task.to_payload())  # vía bus
+                entregable = await self.empresa.ejecutar(texto_efectivo)  # descompone, reparte, integra
             except RequiereConfirmacion as rc:
                 return await self._pedir_confirmacion(texto, intent, rc)
-            pmo_result = Result.from_payload(reply)
-            pmo_model = getattr(self.registry.get("pmo").last_completion, "spec", "-")
-            est_model = getattr(self.registry.get("estrategia_investigador").last_completion, "spec", "-")
-            await self._emit("agente", "estrategia_investigador", "nube", est_model, "aportó hallazgo",
-                             escribir_log=False)
-            await self._emit("agente", "pmo", "nube", pmo_model, "armó plan", resultado=pmo_result.text,
-                             escribir_log=False)
-            final, responder = await self._sintetizar(texto_efectivo, pmo_result)
-            agents_involved, ruta, grupo = ["pmo", "estrategia_investigador"], "nube", "nube"
+            areas = entregable.data.get("areas", [])
+            await self._emit("agente", "empresa", "nube", "-",
+                             f"áreas: {', '.join(areas) or '-'} | subtareas: {len(entregable.data.get('subtareas', []))}"
+                             + (" | finanzas" if entregable.data.get("finanzas") else ""),
+                             resultado=entregable.text, escribir_log=False)
+            final, responder = await self._sintetizar(texto_efectivo, entregable)
+            agents_involved, ruta, grupo = ["empresa", *areas], "nube", "nube"
             await self._emit("sintesis", "conductor", "nube", responder, "síntesis final", resultado=final)
 
         await self._emit("respuesta", "conductor", grupo, responder, "respuesta final entregada", resultado=final)

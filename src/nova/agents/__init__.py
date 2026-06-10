@@ -1,30 +1,29 @@
 """Agentes de NOVA.
 
-Grupo Local (reales): `RespuestasRapidasAgent`, `SentinelaAgent` (visión),
-`MemoriaContextoAgent` (memoria de trabajo). Grupo Nube (aún stubs): `PMOAgent`,
-`EstrategiaInvestigadorAgent`. Los equipos de nube completos llegan más adelante.
+Grupo Local (reales, en `DEFAULT_AGENTS`): `RespuestasRapidasAgent`,
+`SentinelaAgent` (visión), `MemoriaContextoAgent` (memoria de trabajo).
+
+Grupo Nube: la "empresa" (PMO + transversales + áreas) se construye **data-driven**
+desde `config/teams.yaml` con el `SubAgent` genérico (ver `core/empresa.py`); no se
+hand-codean los sub-agentes.
 """
 
-from .estrategia import EstrategiaInvestigadorAgent
 from .memoria import MemoriaContextoAgent
-from .pmo import PMOAgent
 from .respuestas_rapidas import RespuestasRapidasAgent
 from .sentinela import SentinelaAgent
+from .sub_agent import SubAgent
 
-# Agentes que el Conductor instancia y registra por defecto.
+# Agentes locales que el Conductor instancia y registra por defecto.
 DEFAULT_AGENTS = (
     RespuestasRapidasAgent,
-    PMOAgent,
-    EstrategiaInvestigadorAgent,
     SentinelaAgent,
     MemoriaContextoAgent,
 )
 
 __all__ = [
     "RespuestasRapidasAgent",
-    "PMOAgent",
-    "EstrategiaInvestigadorAgent",
     "SentinelaAgent",
     "MemoriaContextoAgent",
+    "SubAgent",
     "DEFAULT_AGENTS",
 ]

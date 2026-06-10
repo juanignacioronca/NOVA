@@ -93,6 +93,15 @@ class ToolExecutor:
         self.stub = _truthy_env("NOVA_FORCE_STUB")
 
     # --- permisos ---
+    def grant(self, agente: str, tools) -> None:
+        """Otorga a un agente (ej. sub-agente del roster) un set de tools.
+
+        Se concede desde `teams.yaml`, pero SIEMPRE acotado por la allowlist global
+        (un grant no puede habilitar una tool que no esté en `allowlist`).
+        """
+        permitidas = [t for t in (tools or []) if self._en_allowlist(t)]
+        self.config.setdefault("permisos", {})[agente] = permitidas
+
     def _en_allowlist(self, name: str) -> bool:
         return name in (self.config.get("allowlist") or [])
 

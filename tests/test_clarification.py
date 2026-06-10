@@ -18,5 +18,5 @@ async def test_pregunta_y_luego_retoma(tmp_path):
     # 2) La respuesta de seguimiento se fusiona con el pendiente y procede.
     final = await conductor.attend("el sábado que viene con amigos")
     assert conductor.last_run["route"] == "nube"
-    assert "pmo" in conductor.last_run["agents"]
+    assert "empresa" in conductor.last_run["agents"]
     assert final

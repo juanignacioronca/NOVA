@@ -35,6 +35,14 @@ agents:
   pmo_integrador:          gemini:gemini-2.5-flash
 
   # --- Transversales (nube) ---
+  estrategia_lider:        gemini:gemini-2.5-flash
   estrategia_investigador: groq:llama-3.3-70b-versatile
   estrategia_analista:     openrouter:deepseek/deepseek-r1:free
-  finanzas_roi:            gemini:gemini-2.5-flash
+  finanzas_lider:          gemini:gemini-2.5-flash
+  finanzas_presupuesto:    ollama:qwen2.5:7b          # cálculo estructurado → local
+  finanzas_roi:            openrouter:deepseek/deepseek-r1:free   # razonamiento cuantitativo
+  finanzas_controller:     ollama:qwen2.5:7b          # seguimiento → local
+
+  # --- Áreas (nube). Claves genéricas reusadas por los líderes/asistentes de área. ---
+  area_lider:              gemini:gemini-2.5-flash    # líderes/redactores/tutores
+  area_asistente:          ollama:qwen2.5:7b          # apoyo estructurado → local

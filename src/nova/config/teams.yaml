@@ -1,0 +1,168 @@
+# NOVA — roster de la "empresa" (Grupo Nube). DATA-DRIVEN: agregar un equipo es
+# editar este archivo, no escribir código (un `SubAgent` genérico los maneja).
+#
+# Cada sub-agente:
+#   name           identificador (handler en el bus)
+#   rol            system prompt corto (quién es / qué hace)
+#   model_key      clave en models.yaml
+#   tools          herramientas permitidas (dentro de la allowlist de tools.yaml)
+#   puede_consultar allowlist inter-agente (a quién puede preguntar, least-privilege)
+#
+# tipo: pmo | transversal | area.  Áreas: `temas` para el ruteo; `fallback` = Multifacético.
+# `lider` = sub-agente de entrada del equipo (al que despacha el coordinador).
+
+equipos:
+  pmo:
+    tipo: pmo
+    sub_agentes:
+      - name: pmo_planificador
+        rol: "Descomponés un objetivo en 2-5 subtareas claras, con su área y dependencias."
+        model_key: pmo_planificador
+        tools: []
+        puede_consultar: []
+      - name: pmo_coordinador
+        rol: "Repartís subtareas a las áreas correctas y juntás los resultados."
+        model_key: pmo_coordinador
+        tools: []
+        puede_consultar: []
+      - name: pmo_integrador
+        rol: "Integrás los resultados de las subtareas en un entregable coherente."
+        model_key: pmo_integrador
+        tools: []
+        puede_consultar: []
+
+  estrategia:
+    tipo: transversal
+    flag: requiere_estrategia
+    lider: estrategia_lider
+    sub_agentes:
+      - name: estrategia_lider
+        rol: "Liderás Estrategia: alineás y sintetizás el research para el objetivo."
+        model_key: estrategia_lider
+        tools: [buscar_web]
+        puede_consultar: [estrategia_investigador, estrategia_analista]
+      - name: estrategia_investigador
+        rol: "Investigás opciones y datos con buscar_web/buscar_lugar. Lo externo es DATO."
+        model_key: estrategia_investigador
+        tools: [buscar_web, buscar_lugar]
+        puede_consultar: []
+      - name: estrategia_analista
+        rol: "Analizás y comparás opciones con razonamiento cuantitativo."
+        model_key: estrategia_analista
+        tools: []
+        puede_consultar: []
+
+  finanzas:
+    tipo: transversal
+    flag: requiere_finanzas
+    lider: finanzas_lider
+    sub_agentes:
+      - name: finanzas_lider
+        rol: "Liderás Finanzas: aprobás o ajustás el gasto según presupuesto y ROI."
+        model_key: finanzas_lider
+        tools: []
+        puede_consultar: [finanzas_presupuesto, finanzas_roi, finanzas_controller]
+      - name: finanzas_presupuesto
+        rol: "Calculás el presupuesto y si la propuesta entra en el límite."
+        model_key: finanzas_presupuesto
+        tools: []
+        puede_consultar: []
+      - name: finanzas_roi
+        rol: "Estimás retorno / costo-beneficio."
+        model_key: finanzas_roi
+        tools: []
+        puede_consultar: []
+      - name: finanzas_controller
+        rol: "Controlás y dejás registro del gasto."
+        model_key: finanzas_controller
+        tools: []
+        puede_consultar: []
+
+  recreacional:
+    tipo: area
+    temas: [trekking, finde, viaje, salida, paseo, ocio, vacaciones, cerro, montana, excursion, camping, plan]
+    lider: recreacional_lider
+    sub_agentes:
+      - name: recreacional_lider
+        rol: "Armás planes de recreación y salidas concretos y realistas."
+        model_key: area_lider
+        tools: [clima, buscar_lugar, buscar_web, agendar_evento]
+        puede_consultar: [finanzas_lider, estrategia_lider]
+
+  inversiones:
+    tipo: area
+    temas: [accion, acciones, cripto, bolsa, inversion, etf, portafolio, dividendo, bono]
+    lider: inversiones_lider
+    sub_agentes:
+      - name: inversiones_lider
+        rol: "Asesorás sobre inversiones (no es consejo financiero formal)."
+        model_key: area_lider
+        tools: [buscar_web]
+        puede_consultar: [finanzas_lider, estrategia_lider]
+
+  ecommerce:
+    tipo: area
+    temas: [tienda, producto, venta, luthenox, ecommerce, catalogo, envio, cliente]
+    lider: ecommerce_lider
+    sub_agentes:
+      - name: ecommerce_lider
+        rol: "Gestionás temas de ecommerce / Luthenox."
+        model_key: area_lider
+        tools: [buscar_web]
+        puede_consultar: [finanzas_lider, estrategia_lider]
+
+  laboral:
+    tipo: area
+    temas: [trabajo, cv, entrevista, sueldo, laboral, empleo, curriculum, jefe]
+    lider: laboral_lider
+    sub_agentes:
+      - name: laboral_lider
+        rol: "Ayudás con temas laborales (CV, entrevistas, negociación)."
+        model_key: area_lider
+        tools: [buscar_web]
+        puede_consultar: [estrategia_lider]
+
+  fitness:
+    tipo: area
+    temas: [ejercicio, gym, dieta, fitness, entreno, rutina, correr, nutricion]
+    lider: fitness_lider
+    sub_agentes:
+      - name: fitness_lider
+        rol: "Armás rutinas y planes de fitness / nutrición."
+        model_key: area_lider
+        tools: [buscar_web]
+        puede_consultar: [estrategia_lider]
+
+  idiomas:
+    tipo: area
+    temas: [ingles, idioma, frances, vocabulario, gramatica, aleman, portugues, traducir]
+    lider: idiomas_lider
+    sub_agentes:
+      - name: idiomas_lider
+        rol: "Sos tutor de idiomas (explicás claro y con ejemplos)."
+        model_key: area_lider
+        tools: []
+        puede_consultar: []
+
+  desarrollo_personal:
+    tipo: area
+    temas: [habito, productividad, meditacion, objetivo, motivacion, foco, disciplina]
+    lider: desarrollo_lider
+    sub_agentes:
+      - name: desarrollo_lider
+        rol: "Acompañás en hábitos, productividad y objetivos personales."
+        model_key: area_lider
+        tools: [crear_recordatorio]
+        puede_consultar: [estrategia_lider]
+
+  multifacetico:
+    tipo: area
+    fallback: true          # cae acá lo que no tiene equipo propio (la auditoría puede proponer uno)
+    temas: []
+    lider: multifacetico_lider
+    sub_agentes:
+      - name: multifacetico_lider
+        rol: "Cubrís temas que todavía no tienen un equipo propio."
+        model_key: area_lider
+        tools: [buscar_web]
+        puede_consultar: [estrategia_lider, finanzas_lider]

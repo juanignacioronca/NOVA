@@ -1,0 +1,7 @@
+# NOVA — topes de la empresa (seguridad + costo). Cortan el fan-out descontrolado
+# y mantienen el gasto bajo (lección de "autonomía descontrolada"; $0-friendly).
+
+topes:
+  max_subtareas: 8            # máximo de subtareas por petición compleja
+  max_inter_agent_hops: 3     # máximo de consultas inter-agente por petición
+  max_model_calls: 20         # máximo de llamadas a modelo por petición
