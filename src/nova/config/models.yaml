@@ -23,6 +23,11 @@ agents:
   # --- Grupo Local (Ollama, $0, siempre activo) ---
   respuestas_rapidas:      ollama:qwen2.5:7b
   memoria_contexto:        ollama:llama3.2:3b
+  # Sentinela (visión local). Local-first; fallback nube. OJO: el tag local de
+  # visión debe existir (`ollama pull qwen2.5vl:7b`, o usar llava/moondream).
+  sentinela_vision:
+    - ollama:qwen2.5vl:7b
+    - gemini:gemini-2.5-flash
 
   # --- PMO / Orquestación (nube) ---
   pmo_planificador:        gemini:gemini-2.5-flash

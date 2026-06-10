@@ -121,11 +121,12 @@ nova/
 
 ## 7. Stack
 
-- **Backend:** Python 3.11+, `asyncio`, FastAPI + WebSocket. `httpx` para llamadas HTTP.
-- **Modelos:** Ollama (local); SDK de Gemini; resto vía OpenAI-compatible.
-- **Config:** YAML. **Logs:** JSONL.
-- **Frontend (fase posterior):** PWA (Vite + TypeScript + Three.js) — reusar el concepto de la visualización supernova de v1.
-- **Dev:** Mac Apple Silicon (Ollama + Metal). **Prod:** ASUS con GPU dedicada.
+- **Backend:** Python **3.11+** (desde Prompt 4; dev en venv `.venv` con Python 3.12 de Homebrew). `asyncio`, FastAPI + WebSocket (fase posterior). `httpx` para HTTP.
+- **Modelos:** Ollama (local); Gemini/Groq/OpenRouter/DeepSeek vía OpenAI-compatible.
+- **Percepción (Prompt 4):** `sounddevice` (mic), `silero-vad` (VAD), `faster-whisper` (STT), `opencv` (cámara), `piper-tts` (voz). Extra opcional `[perception]`; se importan **perezosamente** (sin ellas, esa fuente degrada y los tests corren igual). En macOS: `brew install portaudio ffmpeg`.
+- **Config:** YAML (`models.yaml`, `perception.yaml`). **Logs:** JSONL.
+- **Frontend (fase posterior):** PWA (Vite + TypeScript + Three.js) — reusar el concepto de la visualización supernova de v1; consumirá el stream de `TraceEvent`.
+- **Dev:** Mac Apple Silicon (Ollama + Metal). **Prod:** ASUS con GPU dedicada (Docker → Prompt 5).
 
 ---
 
@@ -149,7 +150,18 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 3 — Conductor real (comprensión + multimodal + aclaración) ✅ **COMPLETO**. El Conductor entiende con modelo (heurística de respaldo), acepta imágenes, **pregunta cuando le falta info**, sintetiza la respuesta final, defiende contra prompt injection y emite una **traza estructurada** consumible.
+- **Fase:** Prompt 4 — Percepción + Grupo Local + avisos proactivos ✅ **COMPLETO**. NOVA tiene oídos, ojos y voz: loop siempre-activo (audio + texto + video) que alimenta el Estado del Mundo, responde por voz (Piper), modo **Sentinela** y **avisos proactivos**. Todo modular y degradable. Dev pasó a **Python 3.12** (venv `.venv`).
+
+### Construido (Prompt 4)
+- [x] **Entorno 3.11+:** `pyproject` `requires-python=">=3.11"`; venv `.venv` (Python 3.12 de Homebrew). El código existente (3.8-compat) corre igual. Extra opcional `[perception]` con las libs pesadas (lazy import → sin ellas, la fuente degrada y los tests corren).
+- [x] **Loop de percepción** (`perception/loop.py`): orquesta fuentes + scheduler como tasks asyncio; cada runnable `start()/run(stop)/stop()`; si degrada, se omite con aviso y el resto sigue; apagado limpio con Ctrl-C.
+- [x] **Audio** (`perception/audio.py`): mic (`sounddevice`) → **VAD** (Silero, gating) → **STT** (faster-whisper) → el texto entra al Conductor **como si lo escribiera** (reusa comprensión + anti-inyección; lo percibido es DATO). Wake-word `openWakeWord` (`hey_jarvis`) como placeholder detrás de flag, off. Backends inyectables.
+- [x] **Video + Sentinela** (`perception/vision.py`): cámara (`opencv`) con **muestreo adaptativo** (diff simple): sin cambios por `idle_seconds` → baja a `idle_interval`; ante cambio relevante → vuelve a `active_interval` y manda el frame al modelo `sentinela_vision` (entra al WorldState). Backends inyectables (cámara/diff/describe/clock/sleeper).
+- [x] **Voz (TTS)** (`output/voz.py`): `VozTTS` con Piper (lazy) + `OutputManager` (pantalla siempre, voz si hay TTS). Barge-in → Prompt 7.
+- [x] **Grupo Local (reales):** `SentinelaAgent` (visión, mantiene "qué/quién está en cámara"), `MemoriaContextoAgent` (memoria de trabajo + match simple "la lista del papá"), `RespuestasRapidasAgent`. Roster: agregado `sentinela_vision` (local-first + fallback nube).
+- [x] **Avisos proactivos** (`core/proactivo.py`): scheduler que revisa triggers del WorldState (recordatorios con hora, eventos de visión "alguien se acerca"); `conductor_simple` redacta en tono NOVA; respeta la separación de seguridad (lo percibido se envuelve con `marcar_no_confiable`).
+- [x] **Daemon + lanzador:** `python -m nova.run` (loop completo, traza en vivo, Ctrl-C limpio) y `nova.command` a doble clic. `nova.chat` (texto) sigue. Config en `config/perception.yaml`.
+- [x] **Tests offline (24/24):** Sentinela baja/sube la frecuencia con cambios simulados, audio→WorldState (+ inyección percibida marcada), trigger proactivo dispara aviso (sin repetir), fuente degradada no tira el loop. Mockea hardware/modelos; sin red ni claves.
 
 ### Construido (Prompt 3)
 - [x] **Motor de comprensión** (`core/comprension.py`): `comprender(texto, images, contexto) -> Intent` (`intencion, entidades, faltantes, complejidad, confianza, multimodal`). Pide **JSON estricto** al modelo, parsea con tolerancia (reintenta una vez "solo JSON"), escala a `conductor_complex` si baja confianza, y cae a **heurística** en stub. Detecta inyección.
@@ -181,13 +193,12 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - [x] **Tests:** `pytest` (5/5) — simple→local, complejo→PMO→Estrategia (por bus), se escribe registro, router cae a stub.
 
 ### Notas
-- **Python:** el target es 3.11+ (§7), pero el esqueleto se mantiene **compatible con 3.8** (`from __future__ import annotations`) para correr en la máquina de dev actual (3.8.6). Al subir a 3.11+ no hay que cambiar nada.
-- Instalar con `pip install -e ".[dev]"`. Correr sin claves = modo stub automático.
+- **Python:** desde Prompt 4 el dev corre en venv `.venv` (Python 3.12); el código se mantiene 3.8-compat (`from __future__ import annotations`), así que no hubo que tocar lo existente.
+- Instalar: `pip install -e ".[dev]"` (núcleo/texto) y opcional `pip install -e ".[perception]"` (audio/video/voz). Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 4 — Percepción + Grupo Local + Docker/ASUS)
-- Audio/video en vivo, percepción continua y **modo Sentinela** (muestreo adaptativo) → Prompt 4.
-- Grupo Local completo (Oído/STT, Voz/TTS, Memoria/contexto, Sentinela/visión), y despliegue Docker/ASUS con GPU.
-- Tampoco hay aún: herramientas reales (calendario/mail/web/clima), equipos completos con sub-agentes, memoria persistente (grafo/vectores/Obsidian), frontend (PWA) y su vista de flujo en vivo (consumirá el stream de `TraceEvent`), `app.py` (FastAPI + WebSocket).
+### Qué sigue (Prompt 5 — Docker + despliegue ASUS)
+- Empaquetar NOVA en **Docker** y desplegar en la **ASUS con GPU** (Ollama + Metal/CUDA), para que el loop de percepción corra como servicio fuera del Mac de dev.
+- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; herramientas reales (calendario/mail/web/clima); equipos de nube completos con sub-agentes; memoria persistente (grafo/vectores/Obsidian); frontend (PWA) y su vista de flujo en vivo (consumirá el stream de `TraceEvent`); `app.py` (FastAPI + WebSocket).
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
 
 ---
@@ -201,3 +212,9 @@ La defensa central contra **prompt injection** es **estructural**, no un filtro 
 - **Alerta complementaria.** `core.security.detectar_inyeccion(texto)` detecta patrones de override ("ignora tus instrucciones", "actúa como…", "system:", etc.). NO se actúa sobre ellos: se marca `inyeccion_detectada` en el `Intent` y un evento `seguridad` (estado `alerta`) en la traza. La separación estructural es lo que protege; esto solo avisa.
 - **Bóveda de secretos.** Las claves viven solo en `.env` (en `.gitignore`), nunca en el código ni en logs. El free-tier de Gemini puede entrenar con los prompts → **nunca** mandar claves/credenciales/datos sensibles a la nube.
 - **Mínimo privilegio (a futuro).** Cuando se agreguen herramientas con efectos (enviar mail, agendar, controlar dispositivos), requerirán confirmación explícita y quedarán registradas.
+
+### 11.1 Privacidad de la percepción (Prompt 4)
+
+- **Lo percibido es input NO confiable.** El audio transcripto y los eventos de visión se tratan como DATO (no instrucción): entran al Conductor por el rol `user`, con la misma defensa anti-inyección del texto. La fuente de audio marca `inyeccion` en el evento si detecta un intento de override; los avisos proactivos envuelven lo percibido con `marcar_no_confiable`.
+- **Local-first / los crudos no salen.** El audio y el video crudos, y la transcripción, se quedan **en local**. A la nube solo va texto (o un fotograma puntual) **cuando el Conductor escala algo complejo**, y **nunca** secretos ni credenciales (bóveda de secretos). La visión Sentinela usa modelo **local** por defecto (`sentinela_vision`: Ollama primario), con nube solo como fallback.
+- **Permisos del SO (TCC).** macOS pide permiso de micrófono y cámara en la 1ª ejecución; sin permiso (o sin hardware/modelo), esa fuente **degrada con aviso** y el resto sigue.

@@ -6,7 +6,7 @@
 # overrideable con NOVA_PYTHON). cd a la raíz del repo sin rutas absolutas.
 
 cd "$(dirname "$0")" || exit 1
-PY="${NOVA_PYTHON:-python3}"
+if [ -x ".venv/bin/python" ]; then PY=".venv/bin/python"; else PY="${NOVA_PYTHON:-python3}"; fi
 
 "$PY" -m nova.chat
 

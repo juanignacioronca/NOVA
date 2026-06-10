@@ -1,0 +1,31 @@
+# NOVA — configuración de percepción (Prompt 4).
+# Cada fuente se enciende/apaga acá. Si falta hardware o modelo, la fuente se
+# degrada con aviso y el resto sigue (no rompe nada).
+
+audio:
+  enabled: true
+  sample_rate: 16000
+  vad_threshold: 0.5        # prob. mínima de voz (Silero) para abrir el gate
+
+video:
+  enabled: true
+  device: 0                 # índice de cámara (opencv)
+  active_interval: 0.5      # seg entre frames cuando HAY actividad
+
+tts:
+  enabled: true
+  voice: es_ES-davefx-medium   # modelo Piper (se descarga aparte; ver README)
+
+sentinel:                   # modo Sentinela (muestreo adaptativo de video)
+  idle_seconds: 5           # sin cambios este tiempo → entra en Sentinela
+  idle_interval: 3.0        # seg entre frames en Sentinela (muestreo lento)
+  change_threshold: 12.0    # diff medio de píxel para considerar "cambio relevante"
+
+wake_word:
+  enabled: false            # placeholder (hey_jarvis); "Hey NOVA" es fase posterior
+  model: hey_jarvis
+
+proactive:
+  enabled: true
+  check_interval: 5.0       # seg entre chequeos de triggers
+  demo_reminder_seconds: 15 # siembra un recordatorio demo al arrancar (0 = off)

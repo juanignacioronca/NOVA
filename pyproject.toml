@@ -7,10 +7,10 @@ name = "nova"
 version = "0.1.0"
 description = "NOVA — asistente personal multiagente (esqueleto del núcleo)"
 readme = "README.md"
-# El target de despliegue es 3.11+ (ver CLAUDE.md §7), pero el esqueleto se
-# mantiene compatible con 3.8 (usa `from __future__ import annotations`) para
-# que corra en cualquier máquina sin fricción.
-requires-python = ">=3.8"
+# Desde Prompt 4 el target es Python 3.11+ (lo piden las libs de audio/video).
+# El núcleo sigue escrito 3.8-compatible (`from __future__ import annotations`),
+# así que no hay que tocar nada del código existente.
+requires-python = ">=3.11"
 dependencies = [
     "httpx",
     "pyyaml",
@@ -20,6 +20,19 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-asyncio",
+]
+# Stack de percepción (audio/video/voz). NO requerido para tests (se mockea) ni
+# para `nova.chat`. Se importa de forma perezosa: si falta una lib, esa fuente
+# se degrada con aviso y el resto sigue. Instalar con: pip install -e ".[perception]"
+# (en macOS antes: brew install portaudio ffmpeg)
+perception = [
+    "numpy",
+    "sounddevice",      # captura de micrófono (necesita portaudio)
+    "faster-whisper",   # STT local (necesita ffmpeg)
+    "silero-vad",       # VAD (detección de voz) — gating del STT
+    "opencv-python",    # captura de cámara
+    "piper-tts",        # TTS local (voz)
+    "openwakeword",     # wake-word (placeholder 'hey_jarvis', off por defecto)
 ]
 
 [tool.setuptools.packages.find]

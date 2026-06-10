@@ -11,5 +11,6 @@ PROJECT_ROOT: Path = PACKAGE_ROOT.parents[1]
 
 CONFIG_DIR: Path = PACKAGE_ROOT / "config"
 MODELS_YAML: Path = CONFIG_DIR / "models.yaml"
+PERCEPTION_YAML: Path = CONFIG_DIR / "perception.yaml"
 LOGS_DIR: Path = PROJECT_ROOT / "logs"
 ENV_FILE: Path = PROJECT_ROOT / ".env"
