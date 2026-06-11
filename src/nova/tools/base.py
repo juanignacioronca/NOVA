@@ -47,6 +47,7 @@ class ToolContext:
 
     world: Any
     stub: bool = False      # True → resultados deterministas sin red
+    memory: Any = None      # MemoryStore (tools de memoria), opcional
 
 
 class BaseTool:

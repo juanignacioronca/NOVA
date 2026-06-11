@@ -150,7 +150,17 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 7 — Grupo Nube (equipos reales) ✅ **COMPLETO**. Los stubs se reemplazaron por la **"empresa"**: PMO que descompone y reparte, transversales (Finanzas, Estrategia) que cruzan, áreas con sub-agentes, y **skills inter-agente** — todo **data-driven** (config, no 30 archivos) y **acotado** en pasos/costo.
+- **Fase:** Prompt 8 — Memoria (grafo + vectores + Obsidian) ✅ **COMPLETO**. NOVA tiene **memoria de largo plazo** local ($0): un motor SQLite (grafo + vectores) para consultas rápidas y una bóveda **Obsidian** (markdown navegable) que lo espeja. El `WorldState` sigue siendo el caché vivo.
+
+### Construido (Prompt 8)
+- [x] **Motor de memoria** (`memory/store.py`, SQLite un archivo): tablas `nodos` (entidades) y `aristas` (relaciones = grafo) + embedding por nodo (blob). API async: `add_nodo`, `add_arista`, `buscar_semantico` (coseno, numpy con fallback Python puro), `vecinos`, `multi_hop`, `relaciones`, `actualizar`, `eliminar`. Sin servicios externos (`sqlite-vec`/Qdrant = futuro a escala).
+- [x] **Embeddings** (`memory/embeddings.py`): locales con Ollama (`nomic-embed-text`) + **fallback stub determinista** (bag-of-tokens hasheado, con stemming crudo) para offline/tests.
+- [x] **Grafo** (`memory/graph.py`): traversal/multi-hop con `networkx` (fallback BFS en Python puro).
+- [x] **Extractor** (`memory/extractor.py`): de un turno saca entidades + relaciones + hechos (modelo→JSON tolerante; stub→heurística: parentescos, preferencias "prefiero X", tareas "lista del papá") → escribe al store + notas Obsidian. Acota el tamaño.
+- [x] **Capa Obsidian** (`memory/obsidian.py`): bóveda en `data/vault/`, **una nota `.md` por entidad** con frontmatter + `[[wikilinks]]` a las relacionadas (espeja el grafo). Navegable; re-ingesta de ediciones humanas = futuro.
+- [x] **Integración:** el Conductor hace **recall** en la comprensión (semántico + vecinos del mejor match) → carga el contexto en el `WorldState` (caché vivo) y lo emite a la traza; tras cada turno **extrae y persiste** lo nuevo. Tools `buscar_memoria` (safe) / `recordar` (low) con permisos (`memoria_contexto` las usa).
+- [x] **Privacidad / $0:** memoria **solo local**; nunca se guardan claves/credenciales; el contenido externo (de tools) ya viene marcado no confiable antes de extraer.
+- [x] **Tests offline (52/52):** add/búsqueda semántica (stub determinista), multi-hop, extractor→grafo+notas con `[[wikilinks]]`, una preferencia se recupera en un turno posterior, "lista del papá" ligada a Papá, la tool de memoria respeta permisos, recall entre turnos en el Conductor.
 
 ### Construido (Prompt 7)
 - [x] **Roster declarativo** (`config/teams.yaml`): cada equipo (PMO, Estrategia, Finanzas, y áreas Inversiones/Ecommerce/Laboral/Fitness/Idiomas/Recreacional/DesarrolloPersonal/Multifacético) con sub-agentes `{name, rol, model_key, tools, puede_consultar}`. Agregar un equipo = editar config (habilita que la auditoría proponga equipos). Claves nuevas en `models.yaml` siguiendo la regla (líderes→gemini, investigador→groq, razonamiento→deepseek, estructurado→local).
@@ -221,9 +231,9 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** desde Prompt 4 el dev corre en venv `.venv` (Python 3.12); el código se mantiene 3.8-compat (`from __future__ import annotations`), así que no hubo que tocar lo existente.
 - Instalar: `pip install -e ".[dev]"` (núcleo/texto) y opcional `pip install -e ".[perception]"` (audio/video/voz). Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 8 — Memoria: grafo + vectores + Obsidian)
-- **Memoria persistente**: grafo (entidades/relaciones) + vectores (búsqueda semántica) + capa **Obsidian** (markdown navegable), que guarda los registros de todos los agentes y alimenta el caché vivo del Estado del Mundo.
-- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; acceso remoto fuera de casa (Tailscale); frontend/PWA con la vista de flujo en vivo (consume el stream de `TraceEvent`); proveedores reales con OAuth (Google Calendar, SMTP real) detrás de las mismas interfaces de tools.
+### Qué sigue (Prompt 9 — Salidas + visual)
+- **Frontend/PWA** con la vista de **flujo en vivo** (consume el stream de `TraceEvent` ya existente), salida por pantalla (HTML dinámico) + voz, y la visualización supernova **audio-reactiva** (reusar el concepto de v1). Botones de modalidad (solo voz / solo pantalla / ambos).
+- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; acceso remoto fuera de casa (Tailscale); proveedores reales con OAuth (Google Calendar, SMTP real) detrás de las mismas interfaces de tools; re-ingesta avanzada de ediciones del vault.
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
 
 ---
@@ -273,3 +283,10 @@ La empresa multiagente es potente y por eso va **acotada** (lección de "autonom
 - **El gasto pasa por Finanzas.** Toda subtarea con efecto económico (`requiere_finanzas`) cruza por el equipo de Finanzas antes de integrar — control de costo incorporado al diseño.
 - **Tools y contenido externo siguen acotados.** Los sub-agentes solo reciben las tools declaradas en su spec (grant acotado a la allowlist global del Prompt 6); el contenido externo sigue marcado no confiable y las acciones `high` siguen pidiendo confirmación.
 - **Tema sin equipo → Multifacético, logueado.** Lo que no calza en un área cae en Multifacético y queda registrado, para que la auditoría (Opus, fuera del flujo) proponga crear el equipo y vos lo apruebes editando `teams.yaml`.
+
+### 11.5 Memoria local y privacidad (Prompt 8)
+
+- **Todo local, $0.** La memoria vive en `data/memory.db` (SQLite) y `data/vault/` (Obsidian) — nada sale a la nube. Embeddings con Ollama local (o stub determinista). `data/` está en `.gitignore` y `.dockerignore` (no se commitea ni se hornea en la imagen).
+- **Sin secretos en la memoria.** Nunca se guardan claves/credenciales en nodos ni en las notas (bóveda de secretos sigue solo en `.env`).
+- **Contenido externo = DATO antes de extraer.** Lo que viene de tools (web/correo/archivos) ya está marcado no confiable (Prompt 6); el extractor lo trata como dato, no obedece instrucciones embebidas.
+- **A la nube solo lo mínimo.** El recall y la extracción corren local; a la nube solo va texto cuando el Conductor escala algo complejo, nunca la base de memoria entera.

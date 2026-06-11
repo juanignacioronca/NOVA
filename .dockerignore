@@ -17,6 +17,7 @@ dist/
 
 # Datos locales (no van a la imagen)
 logs/
+data/
 
 # Repo / dev (no se necesitan en runtime)
 .git/

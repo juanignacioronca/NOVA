@@ -27,6 +27,12 @@ server = [
     "fastapi",
     "uvicorn[standard]",
 ]
+# Memoria de largo plazo (todo local, $0). numpy = coseno; networkx = grafo.
+# El código degrada a Python puro si faltan (los tests corren sin ellas).
+memory = [
+    "numpy",
+    "networkx",
+]
 # Stack de percepción (audio/video/voz). NO requerido para tests (se mockea) ni
 # para `nova.chat`. Se importa de forma perezosa: si falta una lib, esa fuente
 # se degrada con aviso y el resto sigue. Instalar con: pip install -e ".[perception]"

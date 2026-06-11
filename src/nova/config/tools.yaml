@@ -18,14 +18,17 @@ allowlist:
   - crear_recordatorio
   - set_timer
   - enviar_correo
+  - buscar_memoria
+  - recordar
 
 # Qué puede usar cada agente (lo no listado = denegado).
 permisos:
-  conductor:               [clima, buscar_web, buscar_lugar, leer_calendario, agendar_evento, crear_recordatorio, set_timer, enviar_correo]
-  respuestas_rapidas:      [clima, leer_calendario, agendar_evento, crear_recordatorio, set_timer]
+  conductor:               [clima, buscar_web, buscar_lugar, leer_calendario, agendar_evento, crear_recordatorio, set_timer, enviar_correo, buscar_memoria, recordar]
+  respuestas_rapidas:      [clima, leer_calendario, agendar_evento, crear_recordatorio, set_timer, buscar_memoria]
   estrategia_investigador: [buscar_web, buscar_lugar, clima]
   pmo:                     [leer_calendario, agendar_evento, crear_recordatorio]
   finanzas_roi:            [buscar_web]
-  # Sin permisos (no usan tools):
-  memoria_contexto:        []
+  # Memoria de trabajo: gestiona la memoria de largo plazo.
+  memoria_contexto:        [buscar_memoria, recordar]
+  # Sin permisos (no usa tools):
   sentinela:               []

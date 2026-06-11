@@ -83,10 +83,12 @@ class ToolExecutor:
         registro,
         config: Optional[dict] = None,
         max_steps: Optional[int] = None,
+        memory=None,
     ) -> None:
         self.registry = registry
         self.world = world
         self.registro = registro
+        self.memory = memory  # MemoryStore (para las tools de memoria)
         self.config = config if config is not None else load_tools_config()
         self.max_steps = max_steps or int((self.config.get("defaults") or {}).get("max_steps", 4))
         # Modo stub de tools (sin red): forzado por env (tests/offline).
@@ -155,7 +157,7 @@ class ToolExecutor:
             self._log(agente, grupo, name, validado, "REQUIERE CONFIRMACION")
             raise RequiereConfirmacion(mensaje, name, validado)
 
-        ctx = ToolContext(world=self.world, stub=self.stub)
+        ctx = ToolContext(world=self.world, stub=self.stub, memory=self.memory)
         result = await tool.run(ctx, **validado)
 
         content = result.content

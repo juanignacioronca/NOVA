@@ -14,6 +14,7 @@ from .calendario import AgendarEvento, LeerCalendario
 from .clima import Clima
 from .correo import EnviarCorreo
 from .lugares import BuscarLugar
+from .memoria import BuscarMemoria, Recordar
 from .recordatorios import CrearRecordatorio, SetTimer
 from .web import BuscarWeb
 
@@ -29,6 +30,8 @@ def default_tools() -> List[object]:
         CrearRecordatorio(),
         SetTimer(),
         EnviarCorreo(),
+        BuscarMemoria(),
+        Recordar(),
     ]
 
 

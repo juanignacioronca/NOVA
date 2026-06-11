@@ -23,8 +23,17 @@ ENV_FILE: Path = PROJECT_ROOT / ".env"
 
 
 def data_dir() -> Path:
-    """Carpeta de datos locales (calendario, etc.). Overridable con NOVA_DATA_DIR.
-
-    Se lee en cada llamada para respetar overrides por test/runtime.
+    """Carpeta de datos locales (calendario, memoria, etc.). Overridable con
+    NOVA_DATA_DIR. Se lee en cada llamada para respetar overrides por test/runtime.
     """
     return Path(os.environ.get("NOVA_DATA_DIR", str(PROJECT_ROOT / "data")))
+
+
+def memory_db() -> Path:
+    """Archivo SQLite del motor de memoria (grafo + vectores)."""
+    return data_dir() / "memory.db"
+
+
+def vault_dir() -> Path:
+    """Bóveda Obsidian (carpeta de notas `.md` navegables)."""
+    return data_dir() / "vault"

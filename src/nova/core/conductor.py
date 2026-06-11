@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..agents import DEFAULT_AGENTS
 from ..logging.registro import Registro
+from ..memory import Extractor, MemoryStore, ObsidianVault
 from ..models import model_router
 from ..tools import register_default_tools
 from ..tools.base import RequiereConfirmacion, ToolError
@@ -73,9 +74,14 @@ class Conductor:
         self.last_run: Dict[str, Any] = {}
         self.last_trace: List[TraceEvent] = []
         self._tarea = ""
+        # Memoria de largo plazo (local, $0): motor (grafo+vectores) + bóveda Obsidian.
+        self.memory = MemoryStore()
+        self.obsidian = ObsidianVault()
+        self.extractor = Extractor(self.memory, self.obsidian)
+        self._memoria: List[str] = []
         # Capa de herramientas: registra el set y crea el executor (allowlist+permisos).
         register_default_tools(self.registry)
-        self.tools = ToolExecutor(self.registry, self.world, self.registro)
+        self.tools = ToolExecutor(self.registry, self.world, self.registro, memory=self.memory)
         self._ensure_agents()
         # Grupo Nube: la "empresa" (PMO + transversales + áreas), data-driven.
         self.empresa = Empresa(self.bus, self.world, self.registro, self.tools, on_event=self.on_event)
@@ -147,6 +153,33 @@ class Conductor:
         comp = await model_router.complete_meta(self.vision_model, messages)
         return comp.text, comp.spec
 
+    # --- memoria de largo plazo ---
+    async def _recuperar_memoria(self, texto: str) -> List[str]:
+        """Recall: semántico sobre la consulta + vecinos del mejor match. Carga el
+        contexto en el WorldState (caché vivo) y lo emite a la traza."""
+        try:
+            hits = await self.memory.buscar_semantico(texto, k=3)
+        except Exception:  # pragma: no cover
+            return []
+        recuerdos = [n.nombre for n, _ in hits]
+        if hits:
+            try:
+                recuerdos += [n.nombre for n in await self.memory.vecinos(hits[0][0].id)]
+            except Exception:  # pragma: no cover
+                pass
+        recuerdos = list(dict.fromkeys(recuerdos))[:5]
+        if recuerdos:
+            await self.world.set("memoria_relevante", recuerdos)
+            await self._emit("memoria", "memoria_contexto", "local", "-", "recuperé: " + " · ".join(recuerdos))
+        return recuerdos
+
+    async def _recordar_turno(self, texto: str) -> None:
+        """Extrae y persiste lo nuevo del turno (entidades/relaciones/hechos)."""
+        try:
+            await self.extractor.extraer(texto, fuente="conversacion")
+        except Exception:  # pragma: no cover - la memoria nunca rompe la respuesta
+            pass
+
     async def _pedir_confirmacion(self, texto: str, intent: Intent, rc: RequiereConfirmacion) -> str:
         """Una tool `high` pidió confirmación: devolvemos la pregunta (la acción ya
         quedó pendiente en el WorldState; se ejecuta cuando el usuario diga "sí")."""
@@ -158,6 +191,7 @@ class Conductor:
         images = images or []
         self.last_trace = []
         self._tarea = texto
+        self._memoria = []
 
         # 0a) ¿Hay una acción de riesgo (tool `high`) esperando confirmación?
         accion = await self.world.get("pending_action")
@@ -201,6 +235,9 @@ class Conductor:
                 "intento de override detectado; tratado como dato, no obedecido",
                 estado="alerta",
             )
+
+        # 1c) Memoria: recall semántico + relaciones → caché vivo (WorldState).
+        self._memoria = await self._recuperar_memoria(texto_efectivo)
 
         # 2) Aclaración (solo texto; con imagen procede directo).
         if not images and intent.necesita_aclaracion() and rondas < MAX_RONDAS_ACLARACION:
@@ -254,6 +291,8 @@ class Conductor:
             await self._emit("sintesis", "conductor", "nube", responder, "síntesis final", resultado=final)
 
         await self._emit("respuesta", "conductor", grupo, responder, "respuesta final entregada", resultado=final)
+        # Persistir lo nuevo del turno (entidades/relaciones/hechos) en la memoria.
+        await self._recordar_turno(texto)
         return self._finish(texto, intent, ruta, agents_involved, responder, final, supuesto=supuesto)
 
     def _finish(
@@ -283,6 +322,7 @@ class Conductor:
             "confianza": intent.confianza,
             "faltantes": intent.faltantes,
             "supuesto": supuesto,
+            "memoria": list(self._memoria),
             "log_path": str(self.registro.last_path) if self.registro.last_path else "",
             "trace": [e.to_dict() for e in self.last_trace],
         }
