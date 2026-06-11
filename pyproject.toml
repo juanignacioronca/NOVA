@@ -33,6 +33,16 @@ memory = [
     "numpy",
     "networkx",
 ]
+# Reconocimiento de personas (cara + voz). TODO LOCAL (biométricos nunca a la nube).
+# Import perezoso + stub determinista → los tests corren sin estas libs ni hardware.
+recognition = [
+    "numpy",
+    "onnxruntime",      # runtime CPU para InsightFace/ArcFace (cara, 512-d)
+    "insightface",      # detector + embedder de cara pre-entrenado
+    "opencv-python",    # decodificar fotogramas
+    "resemblyzer",      # speaker embeddings (voz)
+    "soundfile",        # leer audio
+]
 # Stack de percepción (audio/video/voz). NO requerido para tests (se mockea) ni
 # para `nova.chat`. Se importa de forma perezosa: si falta una lib, esa fuente
 # se degrada con aviso y el resto sigue. Instalar con: pip install -e ".[perception]"

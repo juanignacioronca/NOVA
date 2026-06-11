@@ -76,16 +76,20 @@ class ProactiveScheduler:
                 self._fired.add(rid)
                 await self._anunciar(f"recordatorio: {r.get('text', '')}")
 
-        # 2) Eventos de visión relevantes (ej. alguien se acerca).
+        # 2) Eventos de percepción: visión relevante o presencia reconocida.
         for ev in await self.world.events():
-            if ev.get("tipo") != "vision":
-                continue
-            key = "vis:" + str(ev.get("ts"))
-            if key in self._fired:
-                continue
-            if any(k in _norm(ev.get("detalle", "")) for k in _APPROACH_KW):
-                self._fired.add(key)
-                await self._anunciar(f"en cámara: {ev.get('detalle', '')}")
+            tipo = ev.get("tipo")
+            ts = str(ev.get("ts"))
+            if tipo == "presencia":  # reconoció a alguien (cara/voz) → avisa con sus pendientes
+                key = "pres:" + ts
+                if key not in self._fired:
+                    self._fired.add(key)
+                    await self._anunciar(ev.get("detalle") or f"se acerca {ev.get('nombre', 'alguien')}")
+            elif tipo == "vision":
+                key = "vis:" + ts
+                if key not in self._fired and any(k in _norm(ev.get("detalle", "")) for k in _APPROACH_KW):
+                    self._fired.add(key)
+                    await self._anunciar(f"en cámara: {ev.get('detalle', '')}")
 
     async def _anunciar(self, base: str) -> None:
         texto = await self._redactar(base)

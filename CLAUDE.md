@@ -150,7 +150,15 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 9 — Salidas + capa visual ✅ **COMPLETO**. NOVA tiene su **cara**: una visualización **audio-reactiva** (Three.js) que se mueve con su voz, la **vista de flujo en vivo** (el diagrama encendido por `TraceEvent` reales), una **pantalla con contenido dinámico**, y los **botones de modalidad**. Frontend Vite+TS, corre local contra el backend.
+- **Fase:** Prompt 10 — Reconocimiento de personas + cierre ✅ **COMPLETO**. 🎉 **ROADMAP TERMINADO.** NOVA reconoce **quién** se acerca (cara) y **quién** habla (voz) por embeddings locales enrolados en la memoria, y el proyecto queda cerrado y operable (smoke e2e + `HANDOFF.md` + prompts de auditoría).
+
+### Construido (Prompt 10)
+- [x] **Reconocimiento por embeddings (sin entrenar):** `recognition/base.py` (motor `Biometrico`: enrolar = promedio de embeddings, match = coseno contra los nodos `persona`, borrar). `faces.py` (InsightFace/ArcFace, onnxruntime-cpu, 512-d) y `voices.py` (Resemblyzer, speaker embeddings) con **import perezoso + stub determinista** (vector derivado de los bytes) → tests offline.
+- [x] **Enrolamiento CLI:** `python -m nova.enroll <nombre> --fotos <carpeta> [--voz <carpeta>]` (y `--borrar`). Los vectores quedan en el **nodo de la persona de la memoria** (Prompt 8); `add_nodo` mergea props (cara y voz conviven sin pisarse).
+- [x] **Integración:** `recognition/presencia.py` → `detectar_presencia` matchea una cara, jala los **pendientes** de la persona (grafo de memoria) y deja un evento que el **scheduler proactivo** anuncia: *"se acerca [nombre]; probablemente por: [tarea]"*. Bajo umbral → "desconocido".
+- [x] **Privacidad (biométrico):** cara/voz **solo locales**, nunca a la nube; los vectores **no** se escriben en las notas Obsidian (filtro en `obsidian.py`); `--borrar` olvida a una persona. Ver §11.6.
+- [x] **Cierre:** `scripts/smoke_e2e.py` (ejercita la cadena completa en stub: percepción→Conductor→Local+Empresa→tools→memoria→reconocimiento→presentación), `HANDOFF.md` (operar/desplegar NOVA), `auditoria/*.md` (prompts fijos de mejora continua para Claude Code + Opus).
+- [x] **Tests offline (66/66):** enrolar+match (sobre/bajo umbral), borrar, cara+voz conviven, presencia→aviso proactivo, biométricos fuera de Obsidian, smoke e2e completo. Sin red, modelos ni hardware.
 
 ### Construido (Prompt 9)
 - [x] **Backend de salidas:** `output/presentacion.py` (`construir_presentacion(run, modalidad)` → `{proceso (traza), resultado (tarjeta/itinerario/tabla/texto), texto, voz, meta}`); `output/voz.py` (`sintetizar_wav` en memoria + `frases()` para TTS por frase); `app.py` con WS extendido (manda `presentacion` + `voz` + `answer`, recibe `modalidad`/`stop`), endpoint `GET /tts` (WAV o 204 si no hay Piper) y CORS para el dev. El Conductor expone `last_run["empresa"]` para el itinerario.
@@ -241,10 +249,18 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** desde Prompt 4 el dev corre en venv `.venv` (Python 3.12); el código se mantiene 3.8-compat (`from __future__ import annotations`), así que no hubo que tocar lo existente.
 - Instalar: `pip install -e ".[dev]"` (núcleo/texto) y opcional `pip install -e ".[perception]"` (audio/video/voz). Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 10 — Reconocimiento de personas: cara + voz)
-- **Reconocimiento de personas** (cara vía la cámara del Sentinela + voz vía el audio), para que NOVA sepa **quién** está/habla y personalice (ligado a las entidades persona de la memoria del Prompt 8). Todo local y con la misma defensa de privacidad.
-- Tampoco hay aún: wake-word real "Hey NOVA"; PWA / multi-dispositivo / Tailscale / mkcert / despliegue ASUS (= Prompt 11); proveedores reales con OAuth (Google Calendar, SMTP real); re-ingesta avanzada de ediciones del vault.
-- _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
+### ROADMAP TERMINADO 🎉 — NOVA queda 100% funcional en local + LAN
+
+Los 10 prompts del roadmap están completos: núcleo → modelos reales → Conductor →
+percepción → Docker → herramientas → empresa de nube → memoria → salidas/visual →
+reconocimiento. Operación completa en [HANDOFF.md](HANDOFF.md); mejora continua en
+[auditoria/](auditoria/).
+
+**Opcional futuro** (anotado, NO construido — NOVA funciona sin esto):
+- Multi-dispositivo / **PWA**, acceso remoto **Tailscale** + mkcert.
+- **Wake word** real ("Hey NOVA").
+- Proveedores con **OAuth** real (Google Calendar, SMTP) detrás de las mismas interfaces de tools.
+- Re-ingesta avanzada de ediciones del vault Obsidian; `sqlite-vec`/Qdrant a escala.
 
 ---
 
@@ -300,3 +316,13 @@ La empresa multiagente es potente y por eso va **acotada** (lección de "autonom
 - **Sin secretos en la memoria.** Nunca se guardan claves/credenciales en nodos ni en las notas (bóveda de secretos sigue solo en `.env`).
 - **Contenido externo = DATO antes de extraer.** Lo que viene de tools (web/correo/archivos) ya está marcado no confiable (Prompt 6); el extractor lo trata como dato, no obedece instrucciones embebidas.
 - **A la nube solo lo mínimo.** El recall y la extracción corren local; a la nube solo va texto cuando el Conductor escala algo complejo, nunca la base de memoria entera.
+
+### 11.6 Biométricos locales (Prompt 10)
+
+Cara y voz son datos **sensibles** → la postura es la más estricta:
+
+- **Nunca a la nube.** El enrolamiento y el match corren **100% local** (InsightFace/Resemblyzer o stub, todo CPU). Los vectores se guardan en el **nodo de la persona** de la memoria local (`data/memory.db`), nunca se envían a ningún servicio externo.
+- **No se escriben en claro.** Los vectores biométricos (`face_vec`/`voice_vec`) se **excluyen** de las notas Obsidian (filtro en `obsidian.py`): la bóveda markdown es navegable pero no expone biométricos.
+- **Consentimiento y olvido.** Enrolás solo a quien vos quieras (`python -m nova.enroll`), y hay un borrado simple por persona (`--borrar`) que elimina sus biométricos.
+- **No se entrena nada.** Se usan embeddings de modelos pre-entrenados (no hay `.h5` propio ni GPU); es como Face ID en concepto. Reconocer es comparar vectores por coseno.
+- **Sirve a lo proactivo, con cuidado.** El reconocimiento alimenta avisos útiles ("se acerca X; sus pendientes"), pero lo percibido sigue siendo **dato no confiable** (misma defensa anti-inyección).

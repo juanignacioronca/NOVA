@@ -110,11 +110,15 @@ class MemoryStore:
         cuerpo = texto or f"{tipo} {nombre} " + " ".join(f"{k}: {v}" for k, v in props.items())
         emb = await self.embedder.embed(cuerpo)
         async with self._lock:
+            # Merge de props (preserva lo existente, ej. vectores biométricos enrolados).
+            row = self._conn.execute("SELECT props FROM nodos WHERE id=?", (nid,)).fetchone()
+            merged = json.loads(row["props"] or "{}") if row else {}
+            merged.update(props)
             self._conn.execute(
                 "INSERT INTO nodos(id,tipo,nombre,props,embedding,ts) VALUES(?,?,?,?,?,?) "
                 "ON CONFLICT(id) DO UPDATE SET nombre=excluded.nombre, props=excluded.props, "
                 "embedding=excluded.embedding, ts=excluded.ts",
-                (nid, tipo, nombre, json.dumps(props, ensure_ascii=False), _pack(emb), time.time()),
+                (nid, tipo, nombre, json.dumps(merged, ensure_ascii=False), _pack(emb), time.time()),
             )
             self._conn.commit()
         return nid

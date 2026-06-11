@@ -14,6 +14,14 @@ from ..paths import vault_dir
 from .store import MemoryStore, Nodo, slug
 
 
+def _es_biometrico(clave: str, valor) -> bool:
+    """Excluye de las notas Obsidian los vectores biométricos y embeddings
+    (privacidad: la cara/voz NUNCA se escriben en markdown navegable)."""
+    if clave.endswith(("_vec", "_dim", "_n")):
+        return True
+    return isinstance(valor, list) and len(valor) > 8
+
+
 class ObsidianVault:
     def __init__(self, directorio=None) -> None:
         self.dir = Path(directorio or vault_dir())
@@ -40,9 +48,10 @@ class ObsidianVault:
             f"# {nodo.nombre}",
             "",
         ]
-        if nodo.props:
+        datos = {k: v for k, v in (nodo.props or {}).items() if not _es_biometrico(k, v)}
+        if datos:
             fm.append("## Datos")
-            for k, v in nodo.props.items():
+            for k, v in datos.items():
                 fm.append(f"- **{k}:** {v}")
             fm.append("")
         if rels:

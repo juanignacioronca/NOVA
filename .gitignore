@@ -4,8 +4,11 @@
 # Registros de agentes (los lee la auditoría, no van al repo)
 logs/
 
-# Datos locales (calendario, etc.)
+# Datos locales (calendario, memoria, etc.)
 data/
+
+# Fotos/voz para enrolar personas (privado, biométrico) — nunca al repo
+personas/
 
 # Python
 __pycache__/
