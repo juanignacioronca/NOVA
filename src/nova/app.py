@@ -16,10 +16,12 @@ comparte un único WorldState para continuidad (recordatorios, aclaraciones).
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, Response, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -29,18 +31,40 @@ from .core.trace import EventCallback
 from .core.world_state import WorldState
 from .env import load_env
 from .logging.registro import Registro
+from .output.presentacion import construir_presentacion
+from .output.voz import VozTTS, frases
 
 load_env()  # claves desde .env si existe (en Docker llegan por env_file)
 
 app = FastAPI(title="NOVA", version=__version__)
 
+# CORS para el frontend en dev (Vite en :5173). En prod va detrás de la LAN.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o for o in os.environ.get("NOVA_CORS", "*").split(",") if o] or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Estado compartido del servicio (un solo mundo; conductores por request).
 _world = WorldState()
 _registro = Registro()
+_tts_cache: object = None  # VozTTS | False | None (lazy)
 
 
 def _make_conductor(on_event: Optional[EventCallback] = None) -> Conductor:
     return Conductor(world=_world, registro=_registro, on_event=on_event)
+
+
+async def _get_tts() -> Optional[VozTTS]:
+    """VozTTS lazy: None si Piper/voz no están (el cliente degrada sin audio)."""
+    global _tts_cache
+    if _tts_cache is None:
+        from .perception.config import load_perception_config
+
+        voz = VozTTS(load_perception_config().tts.voice)
+        _tts_cache = voz if await voz.start() else False
+    return _tts_cache or None
 
 
 class ChatIn(BaseModel):
@@ -78,12 +102,35 @@ async def chat(body: ChatIn) -> ChatOut:
     )
 
 
+def _parse_msg(raw: str) -> dict:
+    """Mensaje del cliente: JSON `{type,...}` o texto plano = un turno."""
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict) and data.get("type"):
+            return data
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return {"type": "text", "text": raw}
+
+
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    modalidad = "ambos"  # estado por conexión (Solo voz / Solo pantalla / Ambos)
     try:
         while True:
-            texto = (await websocket.receive_text()).strip()
+            msg = _parse_msg(await websocket.receive_text())
+            tipo = msg.get("type")
+
+            if tipo == "modalidad":
+                modalidad = msg.get("value", "ambos")
+                await websocket.send_json({"type": "modalidad", "value": modalidad})
+                continue
+            if tipo == "stop":  # barge-in: el cliente cortó la voz
+                await websocket.send_json({"type": "stopped"})
+                continue
+
+            texto = (msg.get("text") or "").strip()
             if not texto:
                 continue
 
@@ -93,11 +140,31 @@ async def ws(websocket: WebSocket) -> None:
             conductor = _make_conductor(on_event=on_event)
             answer = await conductor.attend(texto)
             run = conductor.last_run
+
+            # Payload de presentación (proceso + resultado dinámico + modalidad).
+            await websocket.send_json(construir_presentacion(run, modalidad))
+            # Frases para TTS streaming (el cliente pide /tts por frase). Solo si hay voz.
+            if modalidad in ("voz", "ambos"):
+                voz = construir_presentacion(run, modalidad).get("voz", "")
+                await websocket.send_json({"type": "voz", "frases": frases(voz)})
+            # Compat con la página mínima.
             await websocket.send_json(
                 {"type": "answer", "text": answer, "route": run["route"], "model": run["model"]}
             )
     except WebSocketDisconnect:
         return
+
+
+@app.get("/tts")
+async def tts(text: str = Query(..., max_length=2000)):
+    """Audio TTS (WAV) de una frase. 204 si no hay voz disponible (cliente degrada)."""
+    voz = await _get_tts()
+    if voz is None:
+        return Response(status_code=204)
+    wav = voz.sintetizar_wav(text)
+    if not wav:
+        return Response(status_code=204)
+    return Response(content=wav, media_type="audio/wav")
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -125,7 +125,7 @@ nova/
 - **Modelos:** Ollama (local); Gemini/Groq/OpenRouter/DeepSeek vía OpenAI-compatible.
 - **Percepción (Prompt 4):** `sounddevice` (mic), `silero-vad` (VAD), `faster-whisper` (STT), `opencv` (cámara), `piper-tts` (voz). Extra opcional `[perception]`; se importan **perezosamente** (sin ellas, esa fuente degrada y los tests corren igual). En macOS: `brew install portaudio ffmpeg`.
 - **Config:** YAML (`models.yaml`, `perception.yaml`). **Logs:** JSONL.
-- **Frontend (fase posterior):** PWA (Vite + TypeScript + Three.js) — reusar el concepto de la visualización supernova de v1; consumirá el stream de `TraceEvent`.
+- **Frontend (Prompt 9):** Vite + TypeScript + Three.js (`frontend/`) — NOVA audio-reactiva + flujo en vivo + pantalla dinámica; consume el stream de `TraceEvent` por `WS /ws`. Corre local contra el backend (Vite proxy). PWA / multi-dispositivo = Prompt 11.
 - **Dev:** Mac Apple Silicon (Ollama + Metal). **Prod:** ASUS con GPU dedicada (Docker → Prompt 5).
 
 ---
@@ -150,7 +150,17 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 
 ## 10. Estado actual
 
-- **Fase:** Prompt 8 — Memoria (grafo + vectores + Obsidian) ✅ **COMPLETO**. NOVA tiene **memoria de largo plazo** local ($0): un motor SQLite (grafo + vectores) para consultas rápidas y una bóveda **Obsidian** (markdown navegable) que lo espeja. El `WorldState` sigue siendo el caché vivo.
+- **Fase:** Prompt 9 — Salidas + capa visual ✅ **COMPLETO**. NOVA tiene su **cara**: una visualización **audio-reactiva** (Three.js) que se mueve con su voz, la **vista de flujo en vivo** (el diagrama encendido por `TraceEvent` reales), una **pantalla con contenido dinámico**, y los **botones de modalidad**. Frontend Vite+TS, corre local contra el backend.
+
+### Construido (Prompt 9)
+- [x] **Backend de salidas:** `output/presentacion.py` (`construir_presentacion(run, modalidad)` → `{proceso (traza), resultado (tarjeta/itinerario/tabla/texto), texto, voz, meta}`); `output/voz.py` (`sintetizar_wav` en memoria + `frases()` para TTS por frase); `app.py` con WS extendido (manda `presentacion` + `voz` + `answer`, recibe `modalidad`/`stop`), endpoint `GET /tts` (WAV o 204 si no hay Piper) y CORS para el dev. El Conductor expone `last_run["empresa"]` para el itinerario.
+- [x] **Frontend** (`frontend/`, Vite + TypeScript + Three.js): se conecta por `WS /ws` (proxy de Vite al backend), aplica la **identidad visual** de NOVA (HUD `#070b15`, Chakra Petch + IBM Plex Mono, paleta cyan/mint/amber/violet/slate, corner-ticks, glows).
+- [x] **NOVA audio-reactiva** (`src/nova/supernova.ts`): icosaedro/partículas que pulsan y morfean con el **nivel de la voz** vía Web Audio `AnalyserNode` sobre el TTS que llega del backend; idle en silencio, activa al hablar; envolvente sintético si no hay Piper.
+- [x] **Vista de flujo en vivo** (`src/flow/`): layout del simulador (Percepción → Conductor → Local | Empresa → Salidas; + Memoria/Herramientas/Auditoría) **data-driven**: cada nodo se enciende con el `TraceEvent` real + traza al lado. Toggle on/off.
+- [x] **Pantalla dinámica** (`src/screen/`): renderiza el `resultado` estructurado (itinerario con badges de área/finanzas/estrategia, tarjetas, pregunta, texto) + meta (ruta/modelo/memoria).
+- [x] **Botones de modalidad** (`src/modality.ts`): Solo voz / Solo pantalla / Ambos (manual); la selección va al backend y reconfigura la UI. **Voz streaming + barge-in básico:** TTS por frases; el mic del cliente (VAD simple) corta la reproducción y manda `stop`.
+- [x] **Robustez:** el frontend reconecta solo y degrada si el backend no responde. `npm run build` ✅ (tsc + vite → `dist/`).
+- [x] **Tests backend offline (60/60):** presentación por tipo, WS manda `presentacion`+`voz`+`answer`, modalidad se confirma, `stop` (barge-in), `/tts` degrada a 204 sin Piper.
 
 ### Construido (Prompt 8)
 - [x] **Motor de memoria** (`memory/store.py`, SQLite un archivo): tablas `nodos` (entidades) y `aristas` (relaciones = grafo) + embedding por nodo (blob). API async: `add_nodo`, `add_arista`, `buscar_semantico` (coseno, numpy con fallback Python puro), `vecinos`, `multi_hop`, `relaciones`, `actualizar`, `eliminar`. Sin servicios externos (`sqlite-vec`/Qdrant = futuro a escala).
@@ -231,9 +241,9 @@ No es un servicio dentro de NOVA. Es **asíncrona**: cuando el usuario quiere (e
 - **Python:** desde Prompt 4 el dev corre en venv `.venv` (Python 3.12); el código se mantiene 3.8-compat (`from __future__ import annotations`), así que no hubo que tocar lo existente.
 - Instalar: `pip install -e ".[dev]"` (núcleo/texto) y opcional `pip install -e ".[perception]"` (audio/video/voz). Correr sin claves = modo stub automático.
 
-### Qué sigue (Prompt 9 — Salidas + visual)
-- **Frontend/PWA** con la vista de **flujo en vivo** (consume el stream de `TraceEvent` ya existente), salida por pantalla (HTML dinámico) + voz, y la visualización supernova **audio-reactiva** (reusar el concepto de v1). Botones de modalidad (solo voz / solo pantalla / ambos).
-- Tampoco hay aún: wake-word real "Hey NOVA" y barge-in; acceso remoto fuera de casa (Tailscale); proveedores reales con OAuth (Google Calendar, SMTP real) detrás de las mismas interfaces de tools; re-ingesta avanzada de ediciones del vault.
+### Qué sigue (Prompt 10 — Reconocimiento de personas: cara + voz)
+- **Reconocimiento de personas** (cara vía la cámara del Sentinela + voz vía el audio), para que NOVA sepa **quién** está/habla y personalice (ligado a las entidades persona de la memoria del Prompt 8). Todo local y con la misma defensa de privacidad.
+- Tampoco hay aún: wake-word real "Hey NOVA"; PWA / multi-dispositivo / Tailscale / mkcert / despliegue ASUS (= Prompt 11); proveedores reales con OAuth (Google Calendar, SMTP real); re-ingesta avanzada de ediciones del vault.
 - _(Actualizar esta sección a medida que cada prompt del ROADMAP se completa.)_
 
 ---

@@ -10,13 +10,21 @@ Barge-in (cortar la voz cuando el usuario empieza a hablar) → Prompt 7.
 from __future__ import annotations
 
 import asyncio
+import io
 import os
+import re
 import tempfile
 import wave
-from typing import Optional
+from typing import List, Optional
 
 from ..core.trace import EventCallback, TraceEvent, emit
 from ..core.world_state import WorldState
+
+
+def frases(texto: str) -> List[str]:
+    """Parte el texto en frases (para TTS streaming de menor latencia)."""
+    partes = re.split(r"(?<=[.!?…])\s+", (texto or "").strip())
+    return [p.strip() for p in partes if p.strip()]
 
 
 class VozTTS:
@@ -51,6 +59,15 @@ class VozTTS:
             if os.path.exists(c):
                 return c
         return None
+
+    def sintetizar_wav(self, texto: str) -> Optional[bytes]:
+        """Sintetiza a WAV en memoria (para streamear el audio al navegador)."""
+        if self._voice_obj is None:
+            return None
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav:
+            self._voice_obj.synthesize(texto, wav)
+        return buf.getvalue()
 
     async def speak(self, texto: str) -> None:
         if self._voice_obj is None:

@@ -192,6 +192,7 @@ class Conductor:
         self.last_trace = []
         self._tarea = texto
         self._memoria = []
+        self._empresa_data = {}
 
         # 0a) ¿Hay una acción de riesgo (tool `high`) esperando confirmación?
         accion = await self.world.get("pending_action")
@@ -281,6 +282,7 @@ class Conductor:
                 entregable = await self.empresa.ejecutar(texto_efectivo)  # descompone, reparte, integra
             except RequiereConfirmacion as rc:
                 return await self._pedir_confirmacion(texto, intent, rc)
+            self._empresa_data = entregable.data
             areas = entregable.data.get("areas", [])
             await self._emit("agente", "empresa", "nube", "-",
                              f"áreas: {', '.join(areas) or '-'} | subtareas: {len(entregable.data.get('subtareas', []))}"
@@ -323,6 +325,7 @@ class Conductor:
             "faltantes": intent.faltantes,
             "supuesto": supuesto,
             "memoria": list(self._memoria),
+            "empresa": dict(self._empresa_data),
             "log_path": str(self.registro.last_path) if self.registro.last_path else "",
             "trace": [e.to_dict() for e in self.last_trace],
         }

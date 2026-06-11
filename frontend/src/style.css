@@ -1,0 +1,125 @@
+/* NOVA — identidad visual (HUD oscuro). Reusa la del proyecto. */
+:root {
+  --bg: #070b15;
+  --panel: #0c1426;
+  --line: #1b2740;
+  --ink: #dbe6ff;
+  --dim: #8595b0;
+  --cyan: #37d0ea; /* núcleo */
+  --mint: #49e6a6; /* local */
+  --amber: #ffb454; /* nube */
+  --violet: #b48cff; /* memoria / transversales */
+  --slate: #8595b0; /* auditoría */
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  background: radial-gradient(1200px 700px at 50% -10%, #0b1326 0%, var(--bg) 60%);
+  color: var(--ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  overflow: hidden;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+}
+
+/* Header */
+.hdr {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px; border-bottom: 1px solid var(--line);
+}
+.hdr .brand {
+  font-family: "Chakra Petch", sans-serif; font-weight: 700; letter-spacing: 3px;
+  font-size: 18px; color: var(--cyan);
+}
+.hdr .status { font-size: 12px; color: var(--dim); }
+.hdr .spacer { flex: 1; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; background: var(--slate); }
+.dot.on { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+
+/* Stage: NOVA + pantalla */
+.stage { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: 0; }
+.stage.solo-voz { grid-template-columns: 1fr; }
+.stage.solo-pantalla #nova { opacity: 0.25; }
+#nova { position: relative; min-height: 0; }
+#nova canvas { display: block; width: 100%; height: 100%; }
+.nova-label {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase;
+}
+
+/* Panel (pantalla dinámica + flujo) */
+.panel { border-left: 1px solid var(--line); overflow: auto; padding: 16px; position: relative; }
+.solo-voz .panel { display: none; }
+.card {
+  position: relative; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px; margin-bottom: 12px;
+}
+.card .tick { position: absolute; width: 10px; height: 10px; border: 1px solid var(--cyan); opacity: .5; }
+.card .tick.tl { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.card .tick.br { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+.card h3 { font-family: "Chakra Petch", sans-serif; margin: 0 0 8px; font-size: 14px; letter-spacing: 1px; }
+.card.mint { border-color: color-mix(in srgb, var(--mint) 50%, var(--line)); }
+.card.amber { border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); }
+.card.violet { border-color: color-mix(in srgb, var(--violet) 50%, var(--line)); }
+.muted { color: var(--dim); }
+.pre { white-space: pre-wrap; }
+
+/* Itinerario */
+.step { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.step:last-child { border-bottom: 0; }
+.step .n { color: var(--amber); font-weight: 700; min-width: 22px; }
+.badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--line);
+  color: var(--dim); margin-left: 6px; text-transform: uppercase; letter-spacing: 1px;
+}
+.badge.area { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); }
+.badge.fin { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 50%, var(--line)); }
+.badge.est { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 50%, var(--line)); }
+.badge.mem { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 50%, var(--line)); }
+
+/* Flujo en vivo */
+.flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.lane h4 {
+  font-family: "Chakra Petch", sans-serif; font-size: 11px; letter-spacing: 2px;
+  color: var(--dim); text-transform: uppercase; margin: 0 0 8px;
+}
+.node {
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px;
+  font-size: 12px; color: var(--dim); transition: all .25s ease; position: relative;
+}
+.node .k { font-size: 10px; color: var(--slate); }
+.node.on { color: var(--ink); border-color: var(--cyan); box-shadow: 0 0 12px color-mix(in srgb, var(--cyan) 40%, transparent); background: color-mix(in srgb, var(--cyan) 8%, var(--panel)); }
+.node.local.on { border-color: var(--mint); box-shadow: 0 0 12px color-mix(in srgb, var(--mint) 40%, transparent); }
+.node.nube.on { border-color: var(--amber); box-shadow: 0 0 12px color-mix(in srgb, var(--amber) 40%, transparent); }
+.node.alerta.on { border-color: var(--amber); }
+
+.tracelog { margin-top: 10px; max-height: 180px; overflow: auto; font-size: 11px; }
+.tracelog div { color: var(--dim); padding: 1px 0; }
+.tracelog .alerta { color: var(--amber); }
+
+/* Footer / controles */
+.foot { display: flex; gap: 12px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--line); }
+.modality { display: flex; gap: 6px; }
+.mbtn {
+  font-family: "IBM Plex Mono", monospace; font-size: 12px; cursor: pointer;
+  background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px;
+}
+.mbtn.active { color: var(--bg); background: var(--cyan); border-color: var(--cyan); font-weight: 700; }
+.composer { flex: 1; display: flex; gap: 8px; }
+.composer input {
+  flex: 1; background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 8px; padding: 10px 12px; font-family: inherit; font-size: 14px;
+}
+.composer button {
+  background: var(--cyan); color: var(--bg); border: 0; border-radius: 8px; padding: 0 16px;
+  font-weight: 700; cursor: pointer;
+}
+.toggle { font-size: 12px; color: var(--dim); cursor: pointer; user-select: none; }
+.toggle input { vertical-align: middle; }
