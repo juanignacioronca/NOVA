@@ -23,11 +23,14 @@ allowlist:
   - hora
   - anotar_pendiente
   - ver_pendientes
+  - agregar_compra
+  - ver_compras
+  - quitar_compra
 
 # Qué puede usar cada agente (lo no listado = denegado).
 permisos:
-  conductor:               [clima, buscar_web, buscar_lugar, leer_calendario, agendar_evento, crear_recordatorio, set_timer, enviar_correo, buscar_memoria, recordar, hora, anotar_pendiente, ver_pendientes]
-  respuestas_rapidas:      [clima, leer_calendario, agendar_evento, crear_recordatorio, set_timer, buscar_memoria, hora, anotar_pendiente, ver_pendientes]
+  conductor:               [clima, buscar_web, buscar_lugar, leer_calendario, agendar_evento, crear_recordatorio, set_timer, enviar_correo, buscar_memoria, recordar, hora, anotar_pendiente, ver_pendientes, agregar_compra, ver_compras, quitar_compra]
+  respuestas_rapidas:      [clima, leer_calendario, agendar_evento, crear_recordatorio, set_timer, buscar_memoria, hora, anotar_pendiente, ver_pendientes, agregar_compra, ver_compras, quitar_compra]
   estrategia_investigador: [buscar_web, buscar_lugar, clima]
   pmo:                     [leer_calendario, agendar_evento, crear_recordatorio]
   finanzas_roi:            [buscar_web]

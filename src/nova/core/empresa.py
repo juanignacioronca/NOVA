@@ -229,8 +229,18 @@ class Empresa:
         return subs
 
     # --- 2) coordinar ---
+    def _especialistas(self, equipo: str) -> List[str]:
+        """Especialistas internos del equipo que el líder tiene permitido consultar
+        (intersección de su `puede_consultar` con los miembros del equipo)."""
+        team = self._equipos().get(equipo, {})
+        lider = self._lider(equipo)
+        miembros = {sp.get("name"): sp for sp in team.get("sub_agentes", []) or []}
+        permitidos = (miembros.get(lider) or {}).get("puede_consultar", []) or []
+        return [n for n in permitidos if n in miembros and n != lider]
+
     def _consultas(self, s: Subtarea) -> List[str]:
-        c: List[str] = []
+        # Primero los especialistas del propio equipo, después los transversales.
+        c: List[str] = self._especialistas(s.area)
         if s.requiere_estrategia and self._lider("estrategia"):
             c.append(self._lider("estrategia"))
         if s.requiere_finanzas and self._lider("finanzas"):

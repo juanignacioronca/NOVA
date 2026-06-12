@@ -3,5 +3,7 @@
 
 topes:
   max_subtareas: 8            # máximo de subtareas por petición compleja
-  max_inter_agent_hops: 3     # máximo de consultas inter-agente por petición
-  max_model_calls: 20         # máximo de llamadas a modelo por petición
+  max_inter_agent_hops: 8     # máximo de consultas inter-agente por petición
+                              # (las áreas con especialistas —inversiones, fitness,
+                              #  ecommerce— consultan a su equipo + transversales)
+  max_model_calls: 20         # máximo de llamadas a modelo por petición (tope de gasto)

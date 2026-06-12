@@ -21,7 +21,7 @@ from ..agents.respuestas_rapidas import _ciudad
 from ..logging.registro import Registro
 from ..memory import Extractor, MemoryStore, ObsidianVault
 from ..models import model_router
-from ..tools import register_default_tools
+from ..tools import compras, register_default_tools
 from ..tools.base import RequiereConfirmacion, ToolError
 from ..tools.executor import ToolExecutor
 from . import comprension, prompts
@@ -206,6 +206,13 @@ class Conductor:
                 return ("No sé todavía dónde vivís, así que no puedo darte el clima de tu zona. "
                         "Lo anoté como pendiente. Decime tu ciudad y te lo busco, o cargámela para tenerla siempre.")
             return await self._use_conductor_tool("clima", {"ciudad": ciudad})
+        pedido_compras = compras.parsear_pedido(texto)
+        if pedido_compras is not None:
+            if pedido_compras["accion"] == "agregar":
+                return await self._use_conductor_tool("agregar_compra", {"item": pedido_compras["item"]})
+            if pedido_compras["accion"] == "quitar":
+                return await self._use_conductor_tool("quitar_compra", {"item": pedido_compras["item"]})
+            return await self._use_conductor_tool("ver_compras", {})
         if any(k in n for k in ("timer", "temporizador", "alarma")):
             return await self._use_conductor_tool("set_timer", {"duracion": ents.get("duracion", "10"), "unidad": ents.get("unidad", "minutos")})
         if any(k in n for k in ("recordame", "recordar", "recordatorio", "recuerdame", "acordame")):
@@ -335,6 +342,15 @@ class Conductor:
 
         # 1c) Memoria: recall semántico + relaciones → caché vivo (WorldState).
         self._memoria = await self._recuperar_memoria(texto_efectivo)
+
+        # 1d) Si el reconocimiento detectó a alguien presente, su contexto (pendientes,
+        #     eventos, preferencias) entra al recall del turno.
+        presente = await self.world.get("persona_presente")
+        if presente:
+            ctx = presente.get("contexto") or {}
+            extra = [f"presente: {presente.get('nombre', '?')}"]
+            extra += [str(item) for valores in ctx.values() for item in valores]
+            self._memoria = list(dict.fromkeys(self._memoria + extra))[:8]
 
         # 2) Aclaración: SOLO para lo complejo con datos imprescindibles faltantes
         #    (ej. planear un viaje sin fecha). Lo simple NUNCA se traba pidiendo detalle:
