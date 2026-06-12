@@ -1,0 +1,8 @@
+# NOVA — overrides de prompts del sistema (editable desde la UI de configuración,
+# pestaña "Prompts", o a mano). Solo las claves presentes acá pisan el default;
+# borrar una clave = volver al default de fábrica (src/nova/core/prompts.py).
+#
+# Claves disponibles: comprension, nova_directo, sintesis, vision, planificador,
+# integrador, extractor, sentinela.
+
+prompts: {}

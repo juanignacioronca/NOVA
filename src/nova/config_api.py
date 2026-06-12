@@ -25,11 +25,11 @@ import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .paths import MODELS_YAML, TEAMS_YAML, TOOLS_YAML
+from .paths import MODELS_YAML, PROMPTS_YAML, TEAMS_YAML, TOOLS_YAML
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
-_FILES = {"teams": TEAMS_YAML, "models": MODELS_YAML, "tools": TOOLS_YAML}
+_FILES = {"teams": TEAMS_YAML, "models": MODELS_YAML, "tools": TOOLS_YAML, "prompts": PROMPTS_YAML}
 
 
 # --- YAML round-trip (preserva comentarios si ruamel está disponible) ----------
@@ -284,6 +284,114 @@ async def borrar_agente(team_id: str, name: str) -> dict:
     return {"ok": True}
 
 
+# --- prompts del sistema (editables, con default de fábrica) -------------------
+class PromptIn(BaseModel):
+    text: str
+
+
+@router.get("/prompts")
+async def listar_prompts() -> dict:
+    """Todos los prompts del sistema: texto vigente + si es el default o un override."""
+    from .core import prompts
+
+    return {"prompts": prompts.listar()}
+
+
+@router.put("/prompts/{name}")
+async def guardar_prompt(name: str, body: PromptIn) -> dict:
+    """Guarda el override de un prompt (texto vacío o igual al default = volver al default)."""
+    from .core import prompts
+
+    try:
+        prompts.set_override(name, body.text)
+    except KeyError:
+        raise HTTPException(404, f"prompt '{name}' no existe")
+    return {"ok": True, "es_default": name not in prompts.load()}
+
+
+# --- modelos del núcleo (models.yaml, fuera de teams.yaml) ----------------------
+_CORE_DESC = {
+    "conductor_simple": "Clasifica cada mensaje y responde lo simple (corre SIEMPRE, local)",
+    "conductor_complex": "Sintetiza la respuesta final de lo complejo",
+    "conductor_vision": "Mensajes con imagen del usuario",
+    "respuestas_rapidas": "Agente local de respuestas cortas",
+    "memoria_contexto": "Extrae recuerdos de cada turno (local)",
+    "sentinela_vision": "Describe lo que ve la cámara (local-first)",
+}
+
+
+@router.get("/core")
+async def core_models() -> dict:
+    """Mapa agente→modelo de models.yaml (el roster del núcleo) para el editor."""
+    cfg = _load(MODELS_YAML)
+    agents = cfg.get("agents") or {}
+    out = []
+    for key, val in agents.items():
+        if isinstance(val, (list, tuple)):
+            cadena = [str(v) for v in val]
+        else:
+            cadena = [str(val)]
+        out.append(
+            {
+                "key": str(key),
+                "spec": cadena[0] if cadena else "",
+                "cadena": cadena,
+                "descripcion": _CORE_DESC.get(str(key), ""),
+            }
+        )
+    fallback = str((cfg.get("defaults") or {}).get("fallback", ""))
+    return {"agents": out, "fallback": fallback}
+
+
+class CoreIn(BaseModel):
+    spec: str
+
+
+@router.put("/core/{key}")
+async def set_core_model(key: str, body: CoreIn) -> dict:
+    """Cambia el modelo primario de una clave de models.yaml (en caliente)."""
+    spec = body.spec.strip()
+    if ":" not in spec:
+        raise HTTPException(400, "spec inválida: usá 'proveedor:modelo' (ej. ollama:llama3.2:3b)")
+    data = _load(MODELS_YAML)
+    if key == "_fallback":
+        data.setdefault("defaults", {})["fallback"] = spec
+    else:
+        agents = data.setdefault("agents", {})
+        if key not in agents:
+            raise HTTPException(404, f"clave '{key}' no existe en models.yaml")
+        val = agents[key]
+        if isinstance(val, list) and val:
+            val[0] = spec  # conserva la cadena de fallback por-agente
+        else:
+            agents[key] = spec
+    _backup(MODELS_YAML)
+    _dump(MODELS_YAML, data)
+    _reload_router()
+    return {"ok": True}
+
+
+# --- estado de proveedores (doctor para la UI) ----------------------------------
+@router.get("/estado")
+async def estado_proveedores() -> dict:
+    """Chequeo en vivo de cada proveedor (¿clave? ¿responde? latencia) + modelos
+    pulled en Ollama. Es lo que muestra la pestaña Estado de la UI."""
+    from .doctor import PROVIDERS, _check
+    from .models.providers.ollama_client import ollama_models
+
+    resultados = []
+    for name in PROVIDERS:
+        try:
+            resultados.append(await _check(name))
+        except Exception as exc:  # un proveedor roto no tira el panel
+            resultados.append({"name": name, "ok": False, "state": "error", "detail": str(exc)})
+    try:
+        tags = ollama_models()
+    except Exception:
+        tags = []
+    return {"proveedores": resultados, "ollama_models": tags}
+
+
 # --- editor crudo (YAML completo) ---------------------------------------------
 class RawIn(BaseModel):
     text: str
@@ -319,4 +427,8 @@ async def guardar_raw(which: str, body: RawIn) -> dict:
         fh.write(body.text)
     if which == "models":
         _reload_router()
+    if which == "prompts":
+        from .core import prompts
+
+        prompts.load(force=True)
     return {"ok": True, "guardado": datetime.now().isoformat(timespec="seconds")}

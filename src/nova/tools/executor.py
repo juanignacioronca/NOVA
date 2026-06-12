@@ -220,7 +220,8 @@ class ToolExecutor:
         msgs: List[dict] = ([{"role": "system", "content": prompt}] if prompt else []) + list(messages)
 
         for _ in range(tope):
-            reply = await model_router.complete(agent.model_key, msgs)
+            # Templado: decidir si llamar una tool es estructurado, no creativo.
+            reply = await model_router.complete(agent.model_key, msgs, temperature=0.3)
             call = parse_tool_call(reply)
             if call is None:
                 return reply  # respuesta final (no pidió tool)

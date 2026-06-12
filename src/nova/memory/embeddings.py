@@ -52,13 +52,20 @@ class Embedder:
         self.model = model
         self.dim = dim
         self.host = host
+        # Qué backend produjo el último embedding ("ollama" | "stub"). Lo usa la
+        # búsqueda semántica para elegir un umbral de relevancia acorde.
+        self.last_via: str = "stub"
 
     async def embed(self, texto: str) -> List[float]:
         if _force_stub():
+            self.last_via = "stub"
             return stub_embed(texto, self.dim)
         try:
-            return await self._ollama(texto)
+            vec = await self._ollama(texto)
+            self.last_via = "ollama"
+            return vec
         except Exception:
+            self.last_via = "stub"
             return stub_embed(texto, self.dim)  # degrada offline
 
     async def _ollama(self, texto: str) -> List[float]:

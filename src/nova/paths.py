@@ -16,6 +16,7 @@ PERCEPTION_YAML: Path = CONFIG_DIR / "perception.yaml"
 TOOLS_YAML: Path = CONFIG_DIR / "tools.yaml"
 TEAMS_YAML: Path = CONFIG_DIR / "teams.yaml"
 EMPRESA_YAML: Path = CONFIG_DIR / "empresa.yaml"
+PROMPTS_YAML: Path = CONFIG_DIR / "prompts.yaml"
 # Logs: por defecto `<repo>/logs`, overridable con NOVA_LOG_DIR (Docker monta
 # un volumen escribible ahí, ya que el resto del filesystem es read-only).
 LOGS_DIR: Path = Path(os.environ.get("NOVA_LOG_DIR", str(PROJECT_ROOT / "logs")))

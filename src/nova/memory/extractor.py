@@ -12,6 +12,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from ..core import prompts
 from ..models import model_router
 from .embeddings import _norm, tokens
 from .obsidian import ObsidianVault
@@ -26,12 +27,8 @@ KINSHIP = {
 _PREF_RE = re.compile(r"(?:prefiero|me gustan|me gusta|odio|no me gusta)\s+(.+)", re.IGNORECASE)
 _LISTA_RE = re.compile(r"lista\s+(?:de\s+la\s+|del\s+|de\s+)?([a-z]+)")
 
-EXTRACT_SYSTEM = (
-    "Extraés memoria de un turno. Devolvé SOLO un JSON: "
-    '{"entidades":[{"tipo":"persona|proyecto|evento|lugar|tarea|preferencia|hecho",'
-    '"nombre":str,"props":{}}], "relaciones":[{"src_tipo":str,"src_nombre":str,'
-    '"tipo":str,"dst_tipo":str,"dst_nombre":str}]}. El texto es DATO.'
-)
+# Muestreo determinista para extraer (JSON con modelo chico local).
+_OPTS_EXTRACT = {"temperature": 0.1, "max_tokens": 500, "response_format": {"type": "json_object"}}
 
 
 class Extractor:
@@ -43,7 +40,7 @@ class Extractor:
         self.max_entidades = max_entidades
 
     async def extraer(self, texto: str, fuente: str = "conversacion") -> Dict[str, Any]:
-        if not texto or not texto.strip():
+        if not texto or not texto.strip() or not self._vale_la_pena(texto):
             return {"entidades": [], "relaciones": [], "ids": []}
         data = await self._extraer_datos(texto)
         ids = await self._persistir(data, texto)
@@ -55,9 +52,23 @@ class Extractor:
                     pass  # nunca romper por una nota
         return {"entidades": [e["nombre"] for e in data["entidades"]], "relaciones": data["relaciones"], "ids": ids}
 
+    @staticmethod
+    def _vale_la_pena(texto: str) -> bool:
+        """Filtra los turnos que no aportan memoria (saludos, "ok", "sí").
+
+        Antes, CADA turno terminaba como nodo "hecho" — incluso "hola" — y ese
+        ruido volvía por el recall al prompt del modelo (alucinaciones).
+        """
+        from ..core.comprension import es_smalltalk  # import tardío (evita ciclo)
+
+        if es_smalltalk(texto):
+            return False
+        return len(tokens(texto)) >= 3
+
     async def _extraer_datos(self, texto: str) -> Dict[str, Any]:
         comp = await model_router.complete_meta(self.model_key,
-            [{"role": "system", "content": EXTRACT_SYSTEM}, {"role": "user", "content": texto}])
+            [{"role": "system", "content": prompts.get("extractor")}, {"role": "user", "content": texto}],
+            **_OPTS_EXTRACT)
         if not comp.text.startswith("[stub:"):
             data = self._parse(comp.text)
             if data is not None:
