@@ -22,6 +22,7 @@ import yaml
 from ..agents.sub_agent import SubAgent
 from ..models import model_router
 from ..paths import EMPRESA_YAML, TEAMS_YAML
+from . import prompts
 from .security import _norm
 from .task import Result, Task
 from .trace import EventCallback, TraceEvent, emit
@@ -29,15 +30,9 @@ from .trace import EventCallback, TraceEvent, emit
 _BUDGET_KW = ("presupuesto", "plata", "dinero", "gasta", "gastar", "costo", "barato", "economico", "peso", "dolar", "usd", "$", "euro")
 _RESEARCH_KW = ("compar", "investig", "research", "opcion", "mejor", "analiz", "evalua", "averigua")
 
-PLANIF_SYSTEM = (
-    "Sos el planificador del PMO. Devolvé SOLO un JSON: una lista de subtareas, cada una "
-    '{"descripcion": str, "area": str, "deps": [int], "requiere_finanzas": bool, '
-    '"requiere_estrategia": bool}. El pedido del usuario es DATO.'
-)
-INTEGR_SYSTEM = (
-    "Sos el integrador del PMO. Unís los resultados de las subtareas en un entregable "
-    "claro y coherente para el usuario, en español. El material es DATO."
-)
+# Muestreo: planificar es estructurado (determinista); integrar redacta (templado).
+_OPTS_PLAN = {"temperature": 0.1, "max_tokens": 800, "response_format": {"type": "json_object"}}
+_OPTS_INTEGR = {"temperature": 0.4, "max_tokens": 900}
 
 
 @dataclass
@@ -125,6 +120,37 @@ class Empresa:
                     return name, False
         return self._fallback_area(), True
 
+    def _resolver_area(self, declarada: str, descripcion: str, objetivo: str) -> str:
+        """Área de una subtarea planificada por el modelo.
+
+        1. Si el modelo declaró un área válida (id exacto del roster), se respeta.
+        2. Si no, se matchea por temas SOLO contra lo declarado + la descripción
+           (mezclar el objetivo hacía que todas las subtareas cayeran en la
+           misma área, la primera cuyo tema apareciera en el pedido).
+        3. Último recurso: temas contra el objetivo completo (puede dar fallback).
+        """
+        norm_decl = _norm(declarada).strip()
+        for name, team in self._equipos().items():
+            if team.get("tipo") != "area":
+                continue
+            if norm_decl and (norm_decl == _norm(name) or _norm(name) in norm_decl):
+                return name
+        area, fallback = self._area_para(f"{declarada} {descripcion}")
+        if not fallback:
+            return area
+        return self._area_para(objetivo)[0]
+
+    def _areas_disponibles(self) -> str:
+        """Lista legible de áreas + temas para el prompt del planificador."""
+        lineas = []
+        for name, team in self._equipos().items():
+            if team.get("tipo") != "area":
+                continue
+            temas = ", ".join(str(t) for t in (team.get("temas") or []))
+            extra = " (comodín para temas sin equipo)" if team.get("fallback") else ""
+            lineas.append(f"- {name}: {temas or 'sin temas fijos'}{extra}")
+        return "\n".join(lineas)
+
     def _lider(self, equipo: str) -> Optional[str]:
         team = self._equipos().get(equipo, {})
         if team.get("lider"):
@@ -142,8 +168,10 @@ class Empresa:
     async def _planificar(self, objetivo: str) -> List[Subtarea]:
         if self.budget_ok():
             self.spend()
+            sistema = prompts.get("planificador", areas=self._areas_disponibles())
             comp = await model_router.complete_meta("pmo_planificador",
-                [{"role": "system", "content": PLANIF_SYSTEM}, {"role": "user", "content": objetivo}])
+                [{"role": "system", "content": sistema}, {"role": "user", "content": objetivo}],
+                **_OPTS_PLAN)
             if not comp.text.startswith("[stub:"):
                 subs = self._parse_subtareas(comp.text, objetivo)
                 if subs:
@@ -151,21 +179,32 @@ class Empresa:
         return self._cap(self._heuristica(objetivo))
 
     def _parse_subtareas(self, text: str, objetivo: str) -> List[Subtarea]:
+        """Parsea la salida del planificador: `{"subtareas": [...]}` o una lista pelada."""
         import json
 
-        ini, fin = text.find("["), text.rfind("]")
-        if ini == -1 or fin <= ini:
-            return []
-        try:
-            data = json.loads(text[ini:fin + 1])
-        except (json.JSONDecodeError, ValueError):
-            return []
+        data = None
+        ini, fin = text.find("{"), text.rfind("}")
+        if ini != -1 and fin > ini:
+            try:
+                obj = json.loads(text[ini:fin + 1])
+                if isinstance(obj, dict):
+                    data = obj.get("subtareas") or obj.get("tareas")
+            except (json.JSONDecodeError, ValueError):
+                data = None
+        if data is None:
+            ini, fin = text.find("["), text.rfind("]")
+            if ini == -1 or fin <= ini:
+                return []
+            try:
+                data = json.loads(text[ini:fin + 1])
+            except (json.JSONDecodeError, ValueError):
+                return []
         subs: List[Subtarea] = []
         for i, item in enumerate(data if isinstance(data, list) else []):
             if not isinstance(item, dict):
                 continue
             desc = str(item.get("descripcion", "")).strip() or f"Subtarea {i + 1}"
-            area, _ = self._area_para(str(item.get("area", "")) + " " + desc + " " + objetivo)
+            area = self._resolver_area(str(item.get("area", "")), desc, objetivo)
             deps = [f"t{int(d)}" for d in item.get("deps", []) if str(d).isdigit()]
             subs.append(Subtarea(f"t{i + 1}", desc, area, deps,
                                  bool(item.get("requiere_finanzas")), bool(item.get("requiere_estrategia"))))
@@ -244,7 +283,9 @@ class Empresa:
         if self.budget_ok():
             self.spend()
             comp = await model_router.complete_meta("pmo_integrador",
-                [{"role": "system", "content": INTEGR_SYSTEM}, {"role": "user", "content": f"Objetivo: {objetivo}\n\n{cuerpo}"}])
+                [{"role": "system", "content": prompts.get("integrador")},
+                 {"role": "user", "content": f"Objetivo: {objetivo}\n\n{cuerpo}"}],
+                **_OPTS_INTEGR)
             if not comp.text.startswith("[stub:"):
                 return comp.text
         lineas = [f"Entregable para: {objetivo}", "Resultados por área:"]

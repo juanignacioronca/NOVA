@@ -125,6 +125,8 @@ class ProactiveScheduler:
                     {"role": "system", "content": AVISO_SYSTEM},
                     {"role": "user", "content": marcar_no_confiable(base, "percepcion")},
                 ],
+                temperature=0.4,
+                max_tokens=120,
             )
         except Exception:  # pragma: no cover
             comp = None

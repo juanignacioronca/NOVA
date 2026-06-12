@@ -105,3 +105,56 @@ async def test_sin_clave_salta_directo_al_fallback(no_backoff):
     assert groq.calls == 0  # no se intentó en vano
     assert comp.provider == "ollama"
     assert comp.via == "fallback"
+
+
+# --- response_format (modo JSON): si el modelo no lo soporta, reintenta sin él ---
+class _Resp:
+    def __init__(self, status_code, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+async def test_response_format_reintenta_sin_el(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "clave-falsa")
+    client = OpenAICompatibleClient("groq")
+    bodies = []
+
+    async def fake_post(self, body, headers, timeout):
+        bodies.append(dict(body))
+        if "response_format" in body:
+            return _Resp(400, text="response_format not supported")
+        return _Resp(200, {"choices": [{"message": {"content": "ok JSON"}}]})
+
+    monkeypatch.setattr(OpenAICompatibleClient, "_post", fake_post)
+    out = await client.complete(
+        "modelo-x",
+        [{"role": "user", "content": "dame JSON"}],
+        response_format={"type": "json_object"},
+    )
+    assert out == "ok JSON"
+    assert len(bodies) == 2
+    assert "response_format" in bodies[0] and "response_format" not in bodies[1]
+
+
+async def test_response_format_se_envia_cuando_se_pide(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "clave-falsa")
+    client = OpenAICompatibleClient("groq")
+    bodies = []
+
+    async def fake_post(self, body, headers, timeout):
+        bodies.append(dict(body))
+        return _Resp(200, {"choices": [{"message": {"content": "{}"}}]})
+
+    monkeypatch.setattr(OpenAICompatibleClient, "_post", fake_post)
+    await client.complete(
+        "modelo-x",
+        [{"role": "user", "content": "JSON"}],
+        temperature=0.1,
+        response_format={"type": "json_object"},
+    )
+    assert bodies[0]["temperature"] == 0.1
+    assert bodies[0]["response_format"] == {"type": "json_object"}

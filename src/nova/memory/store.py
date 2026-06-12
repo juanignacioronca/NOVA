@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import re
 import sqlite3
 import time
@@ -52,17 +53,18 @@ def _unpack(blob: Optional[bytes]) -> List[float]:
 
 
 def cosine(a: List[float], b: List[float]) -> float:
-    if not a or not b:
+    # Vectores de espacios distintos (stub 256d vs nomic 768d) NO son comparables:
+    # truncarlos da similitudes basura. Score 0 = no opina.
+    if not a or not b or len(a) != len(b):
         return 0.0
     try:
         import numpy as np
 
         va, vb = np.asarray(a, dtype="float32"), np.asarray(b, dtype="float32")
         n = float(np.linalg.norm(va) * np.linalg.norm(vb))
-        return float(va[: len(vb)] @ vb[: len(va)]) / n if n else 0.0
+        return float(va @ vb) / n if n else 0.0
     except ImportError:
-        m = min(len(a), len(b))
-        dot = sum(a[i] * b[i] for i in range(m))
+        dot = sum(a[i] * b[i] for i in range(len(a)))
         na = math.sqrt(sum(x * x for x in a))
         nb = math.sqrt(sum(x * x for x in b))
         return dot / (na * nb) if na and nb else 0.0
@@ -163,14 +165,31 @@ class MemoryStore:
             rows = self._conn.execute("SELECT src,dst,tipo,props FROM aristas").fetchall()
         return [{"src": r["src"], "dst": r["dst"], "tipo": r["tipo"], "props": json.loads(r["props"] or "{}")} for r in rows]
 
-    async def buscar_semantico(self, q: str, k: int = 5, tipo: Optional[str] = None) -> List[Tuple[Nodo, float]]:
+    async def buscar_semantico(
+        self, q: str, k: int = 5, tipo: Optional[str] = None, min_score: Optional[float] = None
+    ) -> List[Tuple[Nodo, float]]:
+        """Top-k por coseno, filtrado por un **umbral de relevancia**.
+
+        Sin umbral, una consulta trivial ("hola") devuelve los k nodos menos
+        irrelevantes y ese ruido termina en el prompt del modelo. El default
+        depende del backend del embedding: nomic (Ollama) da similitudes de
+        fondo ~0.3-0.5 entre textos no relacionados → 0.55; el stub léxico da
+        score solo si comparte tokens → alcanza un piso chico (0.05).
+        Override: `NOVA_MEMORY_MIN_SCORE` o el parámetro.
+        """
         qv = await self.embedder.embed(q)
+        if min_score is None:
+            env = os.environ.get("NOVA_MEMORY_MIN_SCORE", "")
+            try:
+                min_score = float(env)
+            except ValueError:
+                min_score = 0.55 if getattr(self.embedder, "last_via", "stub") == "ollama" else 0.05
         async with self._lock:
             sql = "SELECT * FROM nodos" + (" WHERE tipo=?" if tipo else "")
             rows = self._conn.execute(sql, (tipo,) if tipo else ()).fetchall()
         puntuados = [(self._row_to_nodo(r), cosine(qv, _unpack(r["embedding"]))) for r in rows]
         puntuados.sort(key=lambda x: x[1], reverse=True)
-        return [(n, s) for n, s in puntuados[:k] if s > 0]
+        return [(n, s) for n, s in puntuados[:k] if s > 0 and s >= min_score]
 
     async def relaciones(self, nid: str) -> List[dict]:
         """Aristas incidentes a un nodo, con el otro extremo resuelto a Nodo."""

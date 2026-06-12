@@ -75,18 +75,12 @@ async def _get_tts() -> Optional[VozTTS]:
 
 
 # --- Centinela (visión por cámara): describe un frame cuando algo cambia ---
-SENTINELA_SYSTEM = (
-    "Sos los ojos de NOVA en modo centinela. Mirás UNA foto de la cámara. Si hay algo "
-    "relevante (una persona, alguien que se acerca, un cambio notable), describilo en UNA "
-    "frase corta y natural en español, empezando con un verbo (\"Veo...\", \"Se acercó...\"). "
-    "Si no hay nada digno de mención, respondé EXACTAMENTE: nada."
-)
-
-
 async def describir_frame(dataurl: str) -> str:
     """Describe una foto de la cámara con el modelo de visión local (sentinela_vision)."""
+    from .core import prompts
+
     messages = [
-        {"role": "system", "content": SENTINELA_SYSTEM},
+        {"role": "system", "content": prompts.get("sentinela")},
         {
             "role": "user",
             "content": [

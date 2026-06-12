@@ -8,6 +8,7 @@ compatible). Endpoint estándar: POST `{base_url}/chat/completions`.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -63,6 +64,9 @@ def provider_config(name: str) -> ProviderConfig:
     raise ProviderError(f"proveedor desconocido: {name}")
 
 
+PROBE_TTL_SECONDS = 20.0  # revalidar la sonda de Ollama (puede arrancar/caerse después que NOVA)
+
+
 class OpenAICompatibleClient(Provider):
     """Un mismo cliente async para todos los proveedores OpenAI-compatibles."""
 
@@ -73,6 +77,7 @@ class OpenAICompatibleClient(Provider):
         self.key_env = cfg.key_env
         self.extra_headers = dict(cfg.extra_headers)
         self._ollama_ok: Optional[bool] = None  # cache de la sonda local
+        self._ollama_probed_at: float = 0.0
 
     def _key(self) -> str:
         if self.key_env is None:
@@ -87,8 +92,10 @@ class OpenAICompatibleClient(Provider):
         return bool(self._key())
 
     def _probe_ollama(self) -> bool:
-        """Sonda barata a /api/tags (cacheada)."""
-        if self._ollama_ok is not None:
+        """Sonda barata a /api/tags, cacheada con TTL (Ollama puede levantarse o
+        caerse mientras NOVA corre; un cache eterno lo dejaba pegado al estado viejo)."""
+        ahora = time.monotonic()
+        if self._ollama_ok is not None and (ahora - self._ollama_probed_at) < PROBE_TTL_SECONDS:
             return self._ollama_ok
         try:
             host = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
@@ -96,6 +103,7 @@ class OpenAICompatibleClient(Provider):
             self._ollama_ok = resp.status_code == 200
         except Exception:
             self._ollama_ok = False
+        self._ollama_probed_at = ahora
         return self._ollama_ok
 
     async def complete(self, model: str, messages: List[dict], **opts) -> str:
@@ -108,20 +116,16 @@ class OpenAICompatibleClient(Provider):
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         headers.update(self.extra_headers)
         body: Dict[str, object] = {"model": model, "messages": messages}
-        for k in ("temperature", "top_p", "max_tokens"):
-            if k in opts:
+        for k in ("temperature", "top_p", "max_tokens", "response_format"):
+            if k in opts and opts[k] is not None:
                 body[k] = opts[k]
         timeout = float(opts.get("timeout", 60.0))
 
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions", json=body, headers=headers
-                )
-        except httpx.TimeoutException as exc:
-            raise ProviderTimeout(f"{self.name}: timeout") from exc
-        except httpx.HTTPError as exc:
-            raise ProviderError(f"{self.name}: error de red: {exc}") from exc
+        resp = await self._post(body, headers, timeout)
+        if resp.status_code == 400 and "response_format" in body:
+            # No todos los modelos soportan modo JSON → reintento sin forzarlo.
+            body.pop("response_format")
+            resp = await self._post(body, headers, timeout)
 
         if resp.status_code == 429:
             raise RateLimitError(f"{self.name} 429")
@@ -135,3 +139,14 @@ class OpenAICompatibleClient(Provider):
         if not choices:
             raise ProviderError(f"{self.name}: respuesta sin choices")
         return (choices[0].get("message") or {}).get("content", "").strip()
+
+    async def _post(self, body: Dict[str, object], headers: Dict[str, str], timeout: float):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                return await client.post(
+                    f"{self.base_url}/chat/completions", json=body, headers=headers
+                )
+        except httpx.TimeoutException as exc:
+            raise ProviderTimeout(f"{self.name}: timeout") from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"{self.name}: error de red: {exc}") from exc

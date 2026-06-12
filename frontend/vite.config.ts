@@ -9,6 +9,7 @@ export default defineConfig({
       "/tts": "http://localhost:8000",
       "/chat": "http://localhost:8000",
       "/health": "http://localhost:8000",
+      "/api": "http://localhost:8000",
     },
   },
 });
