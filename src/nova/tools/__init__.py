@@ -12,6 +12,7 @@ from typing import List
 
 from .calendario import AgendarEvento, LeerCalendario
 from .clima import Clima
+from .compras import AgregarCompra, QuitarCompra, VerCompras
 from .correo import EnviarCorreo
 from .lugares import BuscarLugar
 from .memoria import BuscarMemoria, Recordar
@@ -37,6 +38,9 @@ def default_tools() -> List[object]:
         Hora(),
         AnotarPendiente(),
         VerPendientes(),
+        AgregarCompra(),
+        VerCompras(),
+        QuitarCompra(),
     ]
 
 
