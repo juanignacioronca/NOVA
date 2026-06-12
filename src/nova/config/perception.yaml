@@ -29,3 +29,4 @@ proactive:
   enabled: true
   check_interval: 5.0       # seg entre chequeos de triggers
   demo_reminder_seconds: 15 # siembra un recordatorio demo al arrancar (0 = off)
+  event_horizon_hours: 2    # avisa eventos del calendario que arrancan en esta ventana (+ qué llevar)

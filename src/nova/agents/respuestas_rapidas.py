@@ -9,6 +9,7 @@ import re
 from ..core.agent import BaseAgent
 from ..core.registry import register
 from ..core.task import Result, Task
+from ..tools import compras
 
 _CITY_RE = re.compile(r"\ben\s+([A-Za-zÁ-ÿ][\wÁ-ÿ'’\- ]{1,40})", re.IGNORECASE)
 
@@ -23,7 +24,7 @@ class RespuestasRapidasAgent(BaseAgent):
     name = "respuestas_rapidas"
     group = "local"
     model_key = "respuestas_rapidas"
-    skills = ["respuesta_corta", "timer", "clima", "recordatorio", "calendario"]
+    skills = ["respuesta_corta", "timer", "clima", "recordatorio", "calendario", "compras"]
 
     async def handle(self, task: Task) -> Result:
         # Ruteo por intención a la tool correspondiente (si está disponible).
@@ -58,6 +59,14 @@ class RespuestasRapidasAgent(BaseAgent):
             )
         elif intent == "calendar":
             out = await self.use_tool("leer_calendario", {"limite": 5})
+        elif intent == "shopping":
+            pedido = compras.parsear_pedido(task.goal) or {"accion": "ver", "item": ""}
+            if pedido["accion"] == "agregar":
+                out = await self.use_tool("agregar_compra", {"item": pedido["item"]})
+            elif pedido["accion"] == "quitar":
+                out = await self.use_tool("quitar_compra", {"item": pedido["item"]})
+            else:
+                out = await self.use_tool("ver_compras", {})
         else:
             return None
         self.log(tarea=task.goal, decision=f"resuelto con tool ({intent})", resultado_breve=out.content)

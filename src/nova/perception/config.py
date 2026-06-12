@@ -45,6 +45,7 @@ class ProactiveConfig:
     enabled: bool = True
     check_interval: float = 5.0
     demo_reminder_seconds: float = 15.0
+    event_horizon_hours: float = 2.0  # avisa eventos del calendario que arrancan en esta ventana
 
 
 @dataclass
@@ -86,5 +87,5 @@ def load_perception_config(path: Optional[str] = None) -> PerceptionConfig:
         ),
         tts=TTSConfig(**_pick(tts, "enabled", "voice")),
         wake_word=WakeWordConfig(**_pick(wake, "enabled", "model")),
-        proactive=ProactiveConfig(**_pick(proactive, "enabled", "check_interval", "demo_reminder_seconds")),
+        proactive=ProactiveConfig(**_pick(proactive, "enabled", "check_interval", "demo_reminder_seconds", "event_horizon_hours")),
     )

@@ -65,9 +65,10 @@ _COMPLEX_KW = (
 _SIMPLE_KW = (
     "timer", "temporizador", "alarma", "clima", "tiempo", "weather",
     "calendario", "agenda", "hora", "recordar", "recordatorio",
-    "recuerda", "recorda", "remind",
+    "recuerda", "recorda", "remind", "lista de compras", "lista del super",
 )
 _INTENT_MAP = (
+    (("lista de compras", "lista del super", "lista de la compra", "que hay que comprar", "que tengo que comprar"), "shopping"),
     (("timer", "temporizador", "alarma"), "set_timer"),
     (("clima", "weather", "tiempo"), "weather"),
     (("recordar", "recordatorio", "recuerda", "recorda", "remind"), "reminder"),

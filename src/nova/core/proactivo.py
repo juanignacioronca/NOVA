@@ -3,6 +3,7 @@ cumplirse, hace que NOVA avise **sin que el usuario pregunte**.
 
 Triggers (base; reglas por dominio vienen después):
 - recordatorios con hora (`reminders` en el WorldState),
+- eventos del calendario que arrancan pronto (con qué hay que **llevar**),
 - eventos de visión relevantes ("alguien se acerca").
 
 `conductor_simple` redacta el aviso en el tono de NOVA. Seguridad: lo percibido
@@ -49,6 +50,7 @@ class ProactiveScheduler:
         self.output = output
         self.enabled = getattr(cfg, "enabled", True)
         self.interval = getattr(cfg, "check_interval", 5.0)
+        self.event_horizon_hours = getattr(cfg, "event_horizon_hours", 2.0)
         self.on_event = on_event
         self._clock = clock
         self._fired: set = set()
@@ -76,7 +78,22 @@ class ProactiveScheduler:
                 self._fired.add(rid)
                 await self._anunciar(f"recordatorio: {r.get('text', '')}")
 
-        # 2) Eventos de percepción: visión relevante o presencia reconocida.
+        # 2) Eventos del calendario que arrancan dentro de la ventana → aviso
+        #    con qué llevar (guardado al agendar, o sugerencia por actividad).
+        from ..tools import calendario
+
+        for e in calendario.proximos(self.event_horizon_hours, now=now):
+            key = "ev:" + str(e.get("id") or e.get("titulo", ""))
+            if key in self._fired:
+                continue
+            self._fired.add(key)
+            base = f"tenés «{e.get('titulo', '?')}» {e.get('cuando', 'pronto')}"
+            llevar = e.get("llevar") or calendario.sugerir_llevar(e.get("titulo", ""))
+            if llevar:
+                base += f"; no te olvides de llevar: {', '.join(llevar)}"
+            await self._anunciar(base)
+
+        # 3) Eventos de percepción: visión relevante o presencia reconocida.
         for ev in await self.world.events():
             tipo = ev.get("tipo")
             ts = str(ev.get("ts"))
