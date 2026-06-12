@@ -20,11 +20,14 @@ allowlist:
   - enviar_correo
   - buscar_memoria
   - recordar
+  - hora
+  - anotar_pendiente
+  - ver_pendientes
 
 # Qué puede usar cada agente (lo no listado = denegado).
 permisos:
-  conductor:               [clima, buscar_web, buscar_lugar, leer_calendario, agendar_evento, crear_recordatorio, set_timer, enviar_correo, buscar_memoria, recordar]
-  respuestas_rapidas:      [clima, leer_calendario, agendar_evento, crear_recordatorio, set_timer, buscar_memoria]
+  conductor:               [clima, buscar_web, buscar_lugar, leer_calendario, agendar_evento, crear_recordatorio, set_timer, enviar_correo, buscar_memoria, recordar, hora, anotar_pendiente, ver_pendientes]
+  respuestas_rapidas:      [clima, leer_calendario, agendar_evento, crear_recordatorio, set_timer, buscar_memoria, hora, anotar_pendiente, ver_pendientes]
   estrategia_investigador: [buscar_web, buscar_lugar, clima]
   pmo:                     [leer_calendario, agendar_evento, crear_recordatorio]
   finanzas_roi:            [buscar_web]

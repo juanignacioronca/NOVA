@@ -1,21 +1,30 @@
-// Motor de audio: reproduce el TTS que llega del backend y expone su "nivel"
-// (amplitud) vía AnalyserNode para mover a NOVA. Si no hay audio (sin Piper),
-// usa un envolvente sintético para que igual se vea hablar. Barge-in básico por mic.
+// Motor de audio: reproduce la voz de NOVA y expone su "nivel" (amplitud) para
+// mover la esfera. Dos caminos de voz, en orden:
+//   1) /tts (Piper) → audio real + análisis FFT (la esfera baila con la onda).
+//   2) speechSynthesis del navegador → voz audible sin instalar nada ($0), con
+//      una envolvente sintética para que la esfera igual se mueva.
+// Barge-in básico por mic. micNivel() mueve la esfera mientras vos hablás.
 import { ttsUrl } from "./config";
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
-  private freq = new Uint8Array(0); // inferido Uint8Array<ArrayBuffer>
+  private freq = new Uint8Array(0);
   private source: AudioBufferSourceNode | null = null;
   private nivelSuave = 0;
-  private synthHasta = 0;
-  private synthDesde = 0;
+  private synthActivo = false; // hablando por el navegador (envolvente)
   private generacion = 0; // para cancelar colas al hacer stop
+  private micRms = 0;
+  private voz: SpeechSynthesisVoice | null = null;
   hablando = false;
   onBargeIn: (() => void) | null = null;
+  onHablarInicio: (() => void) | null = null;
+  onHablarFin: (() => void) | null = null;
 
-  /** Se llama desde un gesto del usuario (autoplay policy). */
+  constructor() {
+    this.cargarVoz();
+  }
+
   resume() {
     this.ensure();
     this.ctx?.resume();
@@ -32,17 +41,36 @@ export class AudioEngine {
     this.freq = new Uint8Array(this.analyser.frequencyBinCount);
   }
 
+  // --- selección de voz en español del navegador ---
+  private cargarVoz() {
+    if (!("speechSynthesis" in window)) return;
+    const pick = () => {
+      const vs = window.speechSynthesis.getVoices();
+      this.voz =
+        vs.find((v) => /^es(-|_)?(419|MX|AR|US)?/i.test(v.lang)) ||
+        vs.find((v) => /^es/i.test(v.lang)) ||
+        vs[0] ||
+        null;
+    };
+    pick();
+    if (!this.voz) window.speechSynthesis.onvoiceschanged = pick;
+  }
+
   /** Reproduce una lista de frases en orden (TTS streaming). */
   async hablar(frases: string[]) {
     this.ensure();
     this.stop();
     const gen = ++this.generacion;
     this.hablando = true;
+    this.onHablarInicio?.();
     for (const frase of frases) {
       if (gen !== this.generacion) break;
       await this.reproducirFrase(frase, gen);
     }
-    if (gen === this.generacion) this.hablando = false;
+    if (gen === this.generacion) {
+      this.hablando = false;
+      this.onHablarFin?.();
+    }
   }
 
   private async reproducirFrase(frase: string, gen: number) {
@@ -56,9 +84,9 @@ export class AudioEngine {
         return;
       }
     } catch {
-      /* sin red / sin Piper → envolvente sintético */
+      /* sin red / sin Piper → voz del navegador */
     }
-    await this.envolventeSintetico(frase, gen);
+    await this.hablarNavegador(frase, gen);
   }
 
   private reproducirBuffer(buf: AudioBuffer, gen: number): Promise<void> {
@@ -70,7 +98,6 @@ export class AudioEngine {
       src.onended = () => resolve();
       this.source = src;
       src.start();
-      // Si hacen stop, cortamos.
       const watch = setInterval(() => {
         if (gen !== this.generacion) {
           try { src.stop(); } catch { /* ya parado */ }
@@ -81,29 +108,51 @@ export class AudioEngine {
     });
   }
 
-  private envolventeSintetico(frase: string, gen: number): Promise<void> {
-    const palabras = Math.max(1, frase.split(/\s+/).length);
-    const dur = Math.min(6000, 350 + palabras * 280);
-    this.synthDesde = performance.now();
-    this.synthHasta = this.synthDesde + dur;
+  /** Voz audible por el navegador (speechSynthesis). Mueve la esfera con envolvente. */
+  private hablarNavegador(frase: string, gen: number): Promise<void> {
     return new Promise((resolve) => {
-      const t = setInterval(() => {
-        if (gen !== this.generacion || performance.now() >= this.synthHasta) {
-          clearInterval(t);
-          resolve();
+      if (!("speechSynthesis" in window) || !frase.trim()) return resolve();
+      const u = new SpeechSynthesisUtterance(frase);
+      if (this.voz) u.voice = this.voz;
+      u.lang = this.voz?.lang || "es-ES";
+      u.rate = 1.03;
+      u.pitch = 1.0;
+      let done = false;
+      const fin = () => {
+        if (done) return;
+        done = true;
+        this.synthActivo = false;
+        clearInterval(watch);
+        resolve();
+      };
+      u.onstart = () => { this.synthActivo = true; };
+      u.onend = fin;
+      u.onerror = fin;
+      const watch = setInterval(() => {
+        if (gen !== this.generacion) {
+          try { window.speechSynthesis.cancel(); } catch { /* noop */ }
+          fin();
         }
-      }, 60);
+      }, 80);
+      try {
+        window.speechSynthesis.cancel(); // limpia cola previa
+        window.speechSynthesis.speak(u);
+      } catch {
+        fin();
+      }
     });
   }
 
   stop() {
     this.generacion++;
     this.hablando = false;
-    this.synthHasta = 0;
+    this.synthActivo = false;
+    try { window.speechSynthesis.cancel(); } catch { /* noop */ }
     if (this.source) {
       try { this.source.stop(); } catch { /* ya parado */ }
       this.source = null;
     }
+    this.onHablarFin?.();
   }
 
   /** Nivel 0..1 (suavizado) para la visualización. */
@@ -115,10 +164,9 @@ export class AudioEngine {
       for (let i = 0; i < this.freq.length; i++) s += this.freq[i];
       n = s / (this.freq.length * 255);
     }
-    const ahora = performance.now();
-    if (ahora < this.synthHasta) {
-      const fase = (ahora - this.synthDesde) / 140;
-      const env = 0.35 + 0.3 * Math.abs(Math.sin(fase)) + 0.15 * Math.abs(Math.sin(fase * 0.37));
+    if (this.synthActivo) {
+      const fase = performance.now() / 130;
+      const env = 0.4 + 0.28 * Math.abs(Math.sin(fase)) + 0.16 * Math.abs(Math.sin(fase * 0.37));
       n = Math.max(n, env);
     }
     this.nivelSuave += (n - this.nivelSuave) * 0.25;
@@ -141,6 +189,7 @@ export class AudioEngine {
         let s = 0;
         for (let i = 0; i < data.length; i++) s += data[i];
         const rms = s / (data.length * 255);
+        this.micRms = rms;
         if (this.hablando && rms > 0.22) {
           this.stop();
           this.onBargeIn?.();
@@ -149,5 +198,10 @@ export class AudioEngine {
     } catch {
       /* sin permiso de mic → sin barge-in (degrada) */
     }
+  }
+
+  /** Nivel del micrófono 0..1 (para mover la esfera mientras el usuario habla). */
+  micNivel(): number {
+    return this.micRms;
   }
 }

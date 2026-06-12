@@ -123,3 +123,85 @@ body {
 }
 .toggle { font-size: 12px; color: var(--dim); cursor: pointer; user-select: none; }
 .toggle input { vertical-align: middle; }
+
+/* Controles del header */
+.ctrls { display: flex; align-items: center; gap: 8px; }
+.ico {
+  font-size: 15px; line-height: 1; cursor: pointer; width: 36px; height: 32px;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; display: grid; place-items: center;
+}
+.ico:hover { border-color: var(--cyan); }
+.ico:disabled { opacity: .35; cursor: not-allowed; }
+.ico.active { background: var(--cyan); color: var(--bg); border-color: var(--cyan); box-shadow: 0 0 10px color-mix(in srgb, var(--cyan) 50%, transparent); }
+.ico.active[title*="voz"], #app .ico.active:nth-child(1) { animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 8px color-mix(in srgb, var(--cyan) 50%, transparent); } 50% { box-shadow: 0 0 18px var(--cyan); } }
+
+/* Cámara flotante (preview local) */
+.cambox {
+  position: absolute; left: 16px; bottom: 16px; width: 220px; z-index: 4;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  background: #000; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+}
+.cambox video { display: block; width: 100%; height: auto; }
+.camlabel {
+  position: absolute; left: 6px; top: 6px; font-size: 10px; letter-spacing: 1px;
+  color: var(--mint); background: rgba(0,0,0,.45); padding: 1px 6px; border-radius: 6px;
+}
+
+/* Modo configuración (overlay sobre el stage) */
+.config {
+  position: absolute; inset: 0; z-index: 6; overflow: auto; padding: 16px 20px;
+  background: linear-gradient(180deg, #0a1120 0%, var(--bg) 100%);
+}
+.config-head { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+.config-head h2 {
+  font-family: "Chakra Petch", sans-serif; font-size: 16px; letter-spacing: 1px;
+  margin: 0; color: var(--cyan);
+}
+.config-tabs { display: flex; gap: 6px; }
+.ctab {
+  font-family: inherit; font-size: 12px; cursor: pointer; padding: 6px 12px;
+  background: var(--panel); color: var(--dim); border: 1px solid var(--line); border-radius: 8px;
+}
+.ctab.active { color: var(--bg); background: var(--cyan); border-color: var(--cyan); font-weight: 700; }
+.config-toast {
+  font-size: 12px; color: var(--mint); min-height: 16px; margin-bottom: 8px;
+  opacity: 0; transition: opacity .2s;
+}
+.config-toast.show { opacity: 1; }
+.config-toast.err { color: #ff7a7a; }
+
+.team { margin-bottom: 18px; }
+.team-h { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.team-name { font-family: "Chakra Petch", sans-serif; font-size: 14px; letter-spacing: 1px; color: var(--amber); text-transform: uppercase; }
+.agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.agent { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.agent-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.agent-name { font-weight: 700; color: var(--ink); }
+.flabel { display: block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); margin: 8px 0 3px; }
+.field {
+  width: 100%; background: #0a1018; border: 1px solid var(--line); color: var(--ink);
+  border-radius: 7px; padding: 7px 9px; font-family: inherit; font-size: 12px;
+}
+.field:focus { outline: none; border-color: var(--cyan); }
+textarea.field { resize: vertical; }
+.frow { display: flex; gap: 8px; }
+.fcol { flex: 1; min-width: 0; }
+.agent-actions { display: flex; gap: 8px; margin-top: 10px; }
+.btn {
+  font-family: inherit; font-size: 12px; cursor: pointer; padding: 7px 14px;
+  background: var(--cyan); color: var(--bg); border: 1px solid var(--cyan); border-radius: 7px; font-weight: 700;
+}
+.btn.ghost { background: transparent; color: var(--dim); border-color: var(--line); font-weight: 400; }
+.btn.danger { background: transparent; color: #ff7a7a; border-color: color-mix(in srgb, #ff7a7a 50%, var(--line)); font-weight: 400; }
+.btn:disabled { opacity: .5; cursor: wait; }
+.badge.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); }
+
+.raw-bar { display: flex; gap: 8px; margin-bottom: 8px; }
+.raw-bar .field { width: auto; }
+.raw-area {
+  width: 100%; min-height: 60vh; background: #0a1018; border: 1px solid var(--line);
+  color: var(--ink); border-radius: 8px; padding: 12px; font-family: "IBM Plex Mono", monospace;
+  font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto;
+}

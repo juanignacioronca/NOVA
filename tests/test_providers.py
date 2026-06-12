@@ -14,13 +14,13 @@ from nova.models.providers.openai_compatible import OpenAICompatibleClient, prov
 
 # --- parseo proveedor:modelo + base_url/clave por proveedor ---
 def test_spec_parsing():
-    assert model_router._resolve_spec("conductor_simple") == ("ollama", "qwen2.5:7b")
+    assert model_router._resolve_spec("conductor_simple") == ("ollama", "llama3.2:3b")
     # El modelo lleva ':' interno (deepseek/...:free) — split en el primer ':'.
     assert model_router._resolve_spec("estrategia_analista") == (
         "openrouter",
         "deepseek/deepseek-r1:free",
     )
-    assert model_router._fallback_spec() == ("ollama", "qwen2.5:7b")
+    assert model_router._fallback_spec() == ("ollama", "llama3.2:3b")
 
 
 def test_provider_config_base_url_y_clave():

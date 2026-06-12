@@ -1,0 +1,38 @@
+# Windows: solo el servicio nova, apunta al Ollama nativo (ya tiene los modelos con GPU).
+# Uso: docker compose -f docker-compose.nova-only.yml up -d --build
+
+services:
+  nova:
+    build: .
+    image: nova:latest
+    container_name: nova
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - NOVA_HOST=0.0.0.0
+      - NOVA_PORT=8000
+      - NOVA_LOG_DIR=/app/logs
+      - NOVA_DATA_DIR=/app/data
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    ports:
+      - "${NOVA_LAN_IP:-127.0.0.1}:8000:8000"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+
+networks:
+  default:
+    driver: bridge

@@ -1,0 +1,15 @@
+# Override para Windows + Docker Desktop + WSL2.
+# Usa el Ollama NATIVO de Windows (ya instalado, ya tiene los modelos con GPU).
+# No levanta un contenedor de Ollama separado.
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d --build
+
+services:
+  ollama:
+    profiles: ["disabled"]   # desactiva el servicio ollama del compose base
+
+  nova:
+    depends_on: []            # no esperar al contenedor ollama
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434   # Ollama nativo de Windows

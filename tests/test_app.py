@@ -31,7 +31,10 @@ def test_index_sirve_pagina():
         r = client.get("/")
         assert r.status_code == 200
         assert "NOVA" in r.text
-        assert "/ws" in r.text  # la página se conecta por WebSocket
+        # La página mínima (respaldo, sin build) vive en /lite y se conecta por WS.
+        r2 = client.get("/lite")
+        assert r2.status_code == 200
+        assert "/ws" in r2.text
 
 
 def test_ws_streamea_traza_y_respuesta():

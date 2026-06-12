@@ -5,14 +5,19 @@
 # IMPORTANTE (Ollama): los tags (ej. "qwen2.5:7b", "llama3.2:3b") deben coincidir
 # EXACTAMENTE con los modelos que tengas pulled localmente (`ollama list`).
 # Si no coinciden o Ollama no está corriendo, el router cae a modo STUB.
+#
+# NOTA (GPU): el ASUS tiene una RTX 2060 (6 GB). Los agentes locales SIEMPRE-ACTIVOS
+# usan llama3.2:3b (~2 GB): entra entero en la GPU y queda caliente → ~1-2s/turno.
+# qwen2.5:7b NO entra completo en 6 GB (se parte GPU/CPU → lento); queda pulled por
+# si lo querés elegir a mano desde el modo configuración para tareas puntuales.
 
 defaults:
-  fallback: ollama:qwen2.5:7b      # proveedor/modelo de respaldo ante 429 o caída
+  fallback: ollama:llama3.2:3b     # proveedor/modelo de respaldo ante 429 o caída
   stub_if_unavailable: true        # sin clave/Ollama → respuestas deterministas (testeo sin nada)
 
 agents:
   # --- Conductor (la cara que habla con el usuario) ---
-  conductor_simple:        ollama:qwen2.5:7b
+  conductor_simple:        ollama:llama3.2:3b
   conductor_complex:       gemini:gemini-2.5-flash
   # Multimodal (imágenes). Forma de lista = primario + fallback(s) por-agente.
   # OJO: el tag local de visión debe existir (`ollama pull qwen2.5vl:7b`).
@@ -21,7 +26,7 @@ agents:
     - ollama:qwen2.5vl:7b
 
   # --- Grupo Local (Ollama, $0, siempre activo) ---
-  respuestas_rapidas:      ollama:qwen2.5:7b
+  respuestas_rapidas:      ollama:llama3.2:3b
   memoria_contexto:        ollama:llama3.2:3b
   # Sentinela (visión local). Local-first; fallback nube. OJO: el tag local de
   # visión debe existir (`ollama pull qwen2.5vl:7b`, o usar llava/moondream).
@@ -39,10 +44,10 @@ agents:
   estrategia_investigador: groq:llama-3.3-70b-versatile
   estrategia_analista:     openrouter:deepseek/deepseek-r1:free
   finanzas_lider:          gemini:gemini-2.5-flash
-  finanzas_presupuesto:    ollama:qwen2.5:7b          # cálculo estructurado → local
+  finanzas_presupuesto:    ollama:llama3.2:3b          # cálculo estructurado → local
   finanzas_roi:            openrouter:deepseek/deepseek-r1:free   # razonamiento cuantitativo
-  finanzas_controller:     ollama:qwen2.5:7b          # seguimiento → local
+  finanzas_controller:     ollama:llama3.2:3b          # seguimiento → local
 
   # --- Áreas (nube). Claves genéricas reusadas por los líderes/asistentes de área. ---
   area_lider:              gemini:gemini-2.5-flash    # líderes/redactores/tutores
-  area_asistente:          ollama:qwen2.5:7b          # apoyo estructurado → local
+  area_asistente:          ollama:llama3.2:3b          # apoyo estructurado → local

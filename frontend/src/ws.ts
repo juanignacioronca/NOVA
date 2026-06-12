@@ -62,4 +62,7 @@ export class NovaSocket {
   enviarStop() {
     this.send({ type: "stop" });
   }
+  enviarFrame(dataUrl: string) {
+    this.send({ type: "frame", image: dataUrl });
+  }
 }

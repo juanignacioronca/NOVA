@@ -255,19 +255,7 @@ async def comprender(
             return heuristica(texto, multimodal=multimodal)
         comp = comp2
 
-    intent = _intent_de_json(data, texto, multimodal, comp.spec)
-
-    # 4) Baja confianza (y hay modelo real, no imagen) → escalar a conductor_complex.
-    if not multimodal and intent.confianza < UMBRAL_CONFIANZA:
-        esc = await model_router.complete_meta(
-            "conductor_complex",
-            [
-                {"role": "system", "content": COMPREHENSION_SYSTEM},
-                {"role": "user", "content": _bloque_usuario(texto, contexto)},
-            ],
-        )
-        if not _looks_stub(esc.text):
-            data2 = _extraer_json(esc.text)
-            if data2 is not None:
-                intent = _intent_de_json(data2, texto, multimodal, esc.spec)
-    return intent
+    # Nota: antes acá se escalaba a la nube (conductor_complex) ante baja confianza.
+    # Se quitó: agregaba latencia de red en casi toda charla casual y lo simple ahora
+    # lo responde el Conductor directo. La clasificación local alcanza para rutear.
+    return _intent_de_json(data, texto, multimodal, comp.spec)

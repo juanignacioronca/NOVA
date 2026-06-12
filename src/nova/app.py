@@ -18,14 +18,19 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
+from .config_api import router as config_router
+from .models import model_router
 from .core.conductor import Conductor
 from .core.trace import EventCallback
 from .core.world_state import WorldState
@@ -33,10 +38,12 @@ from .env import load_env
 from .logging.registro import Registro
 from .output.presentacion import construir_presentacion
 from .output.voz import VozTTS, frases
+from .paths import PROJECT_ROOT
 
 load_env()  # claves desde .env si existe (en Docker llegan por env_file)
 
 app = FastAPI(title="NOVA", version=__version__)
+app.include_router(config_router)
 
 # CORS para el frontend en dev (Vite en :5173). En prod va detrás de la LAN.
 app.add_middleware(
@@ -65,6 +72,31 @@ async def _get_tts() -> Optional[VozTTS]:
         voz = VozTTS(load_perception_config().tts.voice)
         _tts_cache = voz if await voz.start() else False
     return _tts_cache or None
+
+
+# --- Centinela (visión por cámara): describe un frame cuando algo cambia ---
+SENTINELA_SYSTEM = (
+    "Sos los ojos de NOVA en modo centinela. Mirás UNA foto de la cámara. Si hay algo "
+    "relevante (una persona, alguien que se acerca, un cambio notable), describilo en UNA "
+    "frase corta y natural en español, empezando con un verbo (\"Veo...\", \"Se acercó...\"). "
+    "Si no hay nada digno de mención, respondé EXACTAMENTE: nada."
+)
+
+
+async def describir_frame(dataurl: str) -> str:
+    """Describe una foto de la cámara con el modelo de visión local (sentinela_vision)."""
+    messages = [
+        {"role": "system", "content": SENTINELA_SYSTEM},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "¿Qué ves en la cámara?"},
+                {"type": "image_url", "image_url": {"url": dataurl}},
+            ],
+        },
+    ]
+    comp = await model_router.complete_meta("sentinela_vision", messages)
+    return (comp.text or "").strip()
 
 
 class ChatIn(BaseModel):
@@ -117,6 +149,7 @@ def _parse_msg(raw: str) -> dict:
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
     modalidad = "ambos"  # estado por conexión (Solo voz / Solo pantalla / Ambos)
+    ultimo_frame = 0.0  # enfriamiento del centinela (protege la GPU de 6 GB)
     try:
         while True:
             msg = _parse_msg(await websocket.receive_text())
@@ -128,6 +161,29 @@ async def ws(websocket: WebSocket) -> None:
                 continue
             if tipo == "stop":  # barge-in: el cliente cortó la voz
                 await websocket.send_json({"type": "stopped"})
+                continue
+            if tipo == "frame":  # centinela: la cámara detectó un cambio → mirar
+                ahora = time.monotonic()
+                img = msg.get("image", "")
+                if ahora - ultimo_frame < 12 or not isinstance(img, str) or not img.startswith("data:"):
+                    continue
+                ultimo_frame = ahora
+                try:
+                    desc = await describir_frame(img)
+                except Exception:
+                    continue
+                low = desc.lower()
+                if not desc or low.startswith("nada") or low.startswith("[stub"):
+                    await websocket.send_json({"type": "sentinela", "detalle": "sin novedad"})
+                    continue
+                await websocket.send_json({
+                    "type": "presentacion", "modalidad": modalidad, "texto": desc, "voz": desc,
+                    "proceso": [], "meta": {"route": "centinela", "model": "sentinela_vision"},
+                    "resultado": {"tipo": "tarjeta", "titulo": "Centinela", "texto": desc, "color": "mint"},
+                })
+                if modalidad in ("voz", "ambos"):
+                    await websocket.send_json({"type": "voz", "frases": [desc]})
+                await websocket.send_json({"type": "answer", "text": desc, "route": "centinela", "model": "sentinela_vision"})
                 continue
 
             texto = (msg.get("text") or "").strip()
@@ -167,8 +223,9 @@ async def tts(text: str = Query(..., max_length=2000)):
     return Response(content=wav, media_type="audio/wav")
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index() -> str:
+@app.get("/lite", response_class=HTMLResponse)
+async def lite() -> str:
+    """Página mínima (sin dependencias) — respaldo si el frontend no está compilado."""
     return INDEX_HTML
 
 
@@ -223,6 +280,18 @@ document.getElementById('f').addEventListener('submit',(e)=>{
 </script>
 </body>
 </html>"""
+
+
+# --- Frontend compilado (Three.js: esfera + cámara + config) -------------------
+# Servido en `/` desde frontend/dist. Si no está compilado (`npm run build`), `/`
+# cae a la página mínima. Se monta AL FINAL para que las rutas API tengan prioridad.
+_DIST = Path(os.environ.get("NOVA_FRONTEND_DIST", str(PROJECT_ROOT / "frontend" / "dist")))
+if (_DIST / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="frontend")
+else:  # sin build → la raíz sirve la página mínima
+    @app.get("/", response_class=HTMLResponse)
+    async def _index_fallback() -> str:
+        return INDEX_HTML
 
 
 def main() -> int:

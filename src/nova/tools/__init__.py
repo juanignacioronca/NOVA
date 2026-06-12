@@ -15,7 +15,9 @@ from .clima import Clima
 from .correo import EnviarCorreo
 from .lugares import BuscarLugar
 from .memoria import BuscarMemoria, Recordar
+from .pendientes import AnotarPendiente, VerPendientes
 from .recordatorios import CrearRecordatorio, SetTimer
+from .reloj import Hora
 from .web import BuscarWeb
 
 
@@ -32,6 +34,9 @@ def default_tools() -> List[object]:
         EnviarCorreo(),
         BuscarMemoria(),
         Recordar(),
+        Hora(),
+        AnotarPendiente(),
+        VerPendientes(),
     ]
 
 

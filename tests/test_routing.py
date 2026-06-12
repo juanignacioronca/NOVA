@@ -12,7 +12,8 @@ async def test_simple_se_resuelve_en_local(tmp_path):
 
     assert conductor.last_run["complexity"] == "simple"
     assert conductor.last_run["route"] == "local"
-    assert conductor.last_run["agents"] == ["respuestas_rapidas"]
+    # El Conductor resuelve lo simple por su cuenta (con tools), sin delegar.
+    assert conductor.last_run["agents"] == ["conductor"]
     assert final  # respuesta no vacía
 
 
